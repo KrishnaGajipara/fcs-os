@@ -37,6 +37,9 @@ const PAGES: Record<Route, { title: string; sub: string }> = {
   },
 }
 
+const LOADER_FADE_START_MS = 1550
+const LOADER_REMOVE_MS = 1800
+
 export default function App() {
   const [route, navigate] = useRoute()
   const [loading, setLoading] = useState(true)
@@ -44,8 +47,8 @@ export default function App() {
   const page = PAGES[route]
 
   useEffect(() => {
-    const startFade = window.setTimeout(() => setLeavingLoader(true), 5000)
-    const remove = window.setTimeout(() => setLoading(false), 5600)
+    const startFade = window.setTimeout(() => setLeavingLoader(true), LOADER_FADE_START_MS)
+    const remove = window.setTimeout(() => setLoading(false), LOADER_REMOVE_MS)
     return () => {
       window.clearTimeout(startFade)
       window.clearTimeout(remove)

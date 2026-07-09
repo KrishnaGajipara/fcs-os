@@ -62,7 +62,7 @@ input, select, textarea { font-family: inherit; }
   align-items: center;
   justify-content: center;
   background: #f7f7f6;
-  transition: opacity 560ms ease, visibility 560ms ease;
+  transition: opacity 220ms ease, visibility 220ms ease;
 }
 
 .loading-screen.leaving {
