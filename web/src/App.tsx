@@ -5,6 +5,7 @@ import { useRoute, type Route } from './lib/router'
 import { IconClipboard, IconClock, IconGrid, IconLock, IconTruck } from './components/ui'
 import { Home } from './views/Home'
 import { MaterialOrder } from './views/MaterialOrder'
+import { RecentOrders } from './views/RecentOrders'
 import { Timesheet } from './views/Timesheet'
 import { QCReport } from './views/QCReport'
 import { Admin } from './views/Admin'
@@ -18,6 +19,10 @@ const PAGES: Record<Route, { title: string; sub: string }> = {
   orders: {
     title: 'Material Order',
     sub: 'Request materials from the warehouse for shipment to your job site.',
+  },
+  recent: {
+    title: 'Recent Orders',
+    sub: 'Find a submitted material order and check its shipment status.',
   },
   timesheet: {
     title: 'Timesheet',
@@ -90,6 +95,12 @@ export default function App() {
               <IconTruck /> Material Order
             </button>
             <button
+              className={`nav-item ${route === 'recent' ? 'active' : ''}`}
+              onClick={() => navigate('recent')}
+            >
+              <IconClipboard /> Recent Orders
+            </button>
+            <button
               className={`nav-item ${route === 'timesheet' ? 'active' : ''}`}
               onClick={() => navigate('timesheet')}
             >
@@ -126,6 +137,7 @@ export default function App() {
           <main className={route === 'admin' ? 'content content-wide' : 'content'}>
             {route === 'home' && <Home onNavigate={navigate} />}
             {route === 'orders' && <MaterialOrder onHome={() => navigate('home')} />}
+            {route === 'recent' && <RecentOrders />}
             {route === 'timesheet' && <Timesheet onHome={() => navigate('home')} />}
             {route === 'qc' && <QCReport onHome={() => navigate('home')} />}
             {route === 'admin' && <Admin onHome={() => navigate('home')} />}

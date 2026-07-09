@@ -150,6 +150,12 @@ export function Track(props: { onHome: () => void }) {
 
           <div className="track-meta">
             <div><span className="tm-label">Job #</span><span className="mono">{order.job_number}</span></div>
+            <div><span className="tm-label">Requested by</span>{order.requested_by}</div>
+            <div>
+              <span className="tm-label">Site contact</span>
+              {order.site_contact}
+              {order.site_contact_phone ? <span className="recent-sub">{order.site_contact_phone}</span> : null}
+            </div>
             <div><span className="tm-label">Needed by</span>{fmtDate(order.needed_by)}</div>
             <div><span className="tm-label">Submitted</span>{fmtDate(order.created_at)}</div>
             <div><span className="tm-label">Items</span>{order.items?.length ?? 0}</div>

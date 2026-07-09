@@ -9,6 +9,9 @@ export type OrderEvent = { status: string; source: string; created_at: string }
 export type TrackedOrder = {
   reference: string
   job_number: string
+  site_contact: string
+  site_contact_phone: string | null
+  requested_by: string
   needed_by: string
   notes: string | null
   items: { name: string; list: string; quantity: string; note?: string }[]
@@ -18,8 +21,9 @@ export type TrackedOrder = {
 }
 
 export type TrackResult = { order: TrackedOrder; events: OrderEvent[] }
+export type RecentOrdersResult = { orders: TrackedOrder[] }
 
-async function call(body: Record<string, unknown>): Promise<TrackResult> {
+async function call<T>(body: Record<string, unknown>): Promise<T> {
   const res = await fetch(API, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -27,11 +31,15 @@ async function call(body: Record<string, unknown>): Promise<TrackResult> {
   })
   const data = await res.json().catch(() => ({}))
   if (!res.ok) throw new Error((data as { error?: string }).error || 'Request failed.')
-  return data as TrackResult
+  return data as T
 }
 
 export function getOrder(ref: string): Promise<TrackResult> {
-  return call({ action: 'get', ref })
+  return call<TrackResult>({ action: 'get', ref })
+}
+
+export function getRecentOrders(): Promise<RecentOrdersResult> {
+  return call<RecentOrdersResult>({ action: 'recent' })
 }
 
 export function setOrderStatus(
@@ -39,7 +47,7 @@ export function setOrderStatus(
   token: string,
   status: TrackedOrder['status'],
 ): Promise<TrackResult> {
-  return call({ action: 'set', ref, token, status })
+  return call<TrackResult>({ action: 'set', ref, token, status })
 }
 
 /** Parse ?ref=&m= out of the hash route (#/track?ref=...&m=...). */

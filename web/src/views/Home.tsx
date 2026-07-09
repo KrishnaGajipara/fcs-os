@@ -14,6 +14,12 @@ const MODULES: {
     desc: 'Browse the Lead Job and Painting order lists and request materials for shipment to your site.',
   },
   {
+    route: 'recent',
+    icon: <IconClipboard size={20} />,
+    title: 'Recent Orders',
+    desc: 'Look up recently submitted material orders and open their live shipment status page.',
+  },
+  {
     route: 'timesheet',
     icon: <IconClock size={20} />,
     title: 'Timesheet',

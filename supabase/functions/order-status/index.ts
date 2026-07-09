@@ -2,9 +2,10 @@
 // Powers the shipment tracking page and the "update status" links in the
 // warehouse notification email.
 //
-//   get { ref }               -> public status + timeline for one order
-//   set { ref, token, status }-> update status; token must be the order's
-//                                manage token = HMAC(ORDER_TOKEN_SECRET, ref)
+//   recent                   -> latest material orders for employee lookup
+//   get { ref }              -> public status + timeline for one order
+//   set { ref, token, status } -> update status; token must be the order's
+//                                 manage token = HMAC(ORDER_TOKEN_SECRET, ref)
 //
 // Reading is open by reference (low-sensitivity, internal). Only the warehouse
 // email holds a valid manage token, so only it can change status here. The
@@ -57,7 +58,7 @@ const admin = createClient(
 async function loadOrder(ref: string) {
   const { data: order } = await admin
     .from("material_orders")
-    .select("id, reference, job_number, needed_by, notes, items, status, status_updated_at, created_at")
+    .select("id, reference, job_number, site_contact, site_contact_phone, requested_by, needed_by, notes, items, status, status_updated_at, created_at")
     .eq("reference", ref)
     .single();
   if (!order) return null;
@@ -84,6 +85,17 @@ Deno.serve(async (req) => {
   }
 
   const action = String(payload.action ?? "");
+
+  if (action === "recent") {
+    const { data, error } = await admin
+      .from("material_orders")
+      .select("reference, job_number, site_contact, site_contact_phone, requested_by, needed_by, notes, items, status, status_updated_at, created_at")
+      .order("created_at", { ascending: false })
+      .limit(75);
+    if (error) return json({ error: "query failed" }, 500);
+    return json({ orders: data ?? [] });
+  }
+
   const ref = String(payload.ref ?? "");
   if (!ref) return json({ error: "missing reference" }, 400);
 
