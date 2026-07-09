@@ -61,7 +61,7 @@ input, select, textarea { font-family: inherit; }
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #f8f8f8;
+  background: #f7f7f6;
   transition: opacity 560ms ease, visibility 560ms ease;
 }
 
@@ -71,9 +71,22 @@ input, select, textarea { font-family: inherit; }
 }
 
 .loading-screen img {
-  width: min(100vw, 800px);
+  width: min(46vw, 340px);
   height: auto;
   display: block;
+  mix-blend-mode: multiply;
+  clip-path: inset(4px round 22px);
+  filter: contrast(1.03) saturate(0.96);
+}
+
+.loading-screen::after {
+  content: '';
+  position: absolute;
+  width: min(46vw, 340px);
+  aspect-ratio: 800 / 461;
+  border-radius: 22px;
+  box-shadow: inset 0 0 0 14px #f7f7f6, 0 0 24px 18px #f7f7f6;
+  pointer-events: none;
 }
 
 /* ---- App shell ---------------------------------------------------------- */
