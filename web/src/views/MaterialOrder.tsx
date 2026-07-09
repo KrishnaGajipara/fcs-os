@@ -53,6 +53,7 @@ export function MaterialOrder(props: { onHome: () => void }) {
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState('')
   const [doneRef, setDoneRef] = useState('')
+  const [doneRow, setDoneRow] = useState<Record<string, unknown> | null>(null)
 
   const load = () => {
     setLoadError(false)
@@ -136,7 +137,7 @@ export function MaterialOrder(props: { onHome: () => void }) {
     ]
 
     const reference = makeReference('MO')
-    const { error } = await supabase.from('material_orders').insert({
+    const payload = {
       reference,
       job_number: jobNumber.trim(),
       site_contact: siteContact.trim(),
@@ -145,7 +146,8 @@ export function MaterialOrder(props: { onHome: () => void }) {
       needed_by: neededBy,
       items,
       notes: notes.trim() || null,
-    })
+    }
+    const { error } = await supabase.from('material_orders').insert(payload)
 
     setSubmitting(false)
     if (error) {
@@ -154,12 +156,14 @@ export function MaterialOrder(props: { onHome: () => void }) {
       )
       return
     }
+    setDoneRow({ ...payload, status: 'pending', created_at: new Date().toISOString() })
     setDoneRef(reference)
     window.scrollTo(0, 0)
   }
 
   const reset = () => {
     setDoneRef('')
+    setDoneRow(null)
     setQty({})
     setItemNotes({})
     setCustomRows([])
@@ -169,7 +173,7 @@ export function MaterialOrder(props: { onHome: () => void }) {
     setErrors({})
   }
 
-  if (doneRef) {
+  if (doneRef && doneRow) {
     return (
       <SuccessScreen
         title="Order submitted"
@@ -177,6 +181,9 @@ export function MaterialOrder(props: { onHome: () => void }) {
         message="The warehouse has been notified by email and will prepare your shipment for the requested date. Keep this reference for follow-up."
         onReset={reset}
         onHome={props.onHome}
+        exportKind="material_order"
+        exportRow={doneRow}
+        trackHref={`#/track?ref=${encodeURIComponent(doneRef)}`}
       />
     )
   }

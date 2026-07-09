@@ -1,4 +1,10 @@
+import { useState } from 'react'
 import type { ReactNode } from 'react'
+import {
+  exportSubmissionCsv,
+  exportSubmissionExcel,
+  type ExportKind,
+} from '../lib/export'
 
 /* ---- Icons (stroke line icons, 18px grid) -------------------------------- */
 
@@ -46,6 +52,13 @@ export const IconClipboard = ({ size = 18 }: IconProps) => (
   </svg>
 )
 
+export const IconLock = ({ size = 18 }: IconProps) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" {...stroke}>
+    <rect x="4.5" y="10.5" width="15" height="9.5" rx="2" />
+    <path d="M8 10.5V7.5a4 4 0 0 1 8 0v3" />
+  </svg>
+)
+
 export const IconCheck = ({ size = 26 }: IconProps) => (
   <svg width={size} height={size} viewBox="0 0 24 24" {...stroke} strokeWidth={2.2}>
     <path d="M4.5 12.5l5 5 10-11" />
@@ -82,13 +95,35 @@ export function Field(props: {
 
 /* ---- Success screen -------------------------------------------------------- */
 
+export const IconDownload = ({ size = 16 }: IconProps) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" {...stroke}>
+    <path d="M12 4v11" />
+    <path d="M7.5 10.5 12 15l4.5-4.5" />
+    <path d="M5 19.5h14" />
+  </svg>
+)
+
 export function SuccessScreen(props: {
   title: string
   reference: string
   message: string
   onReset: () => void
   onHome: () => void
+  exportKind: ExportKind
+  exportRow: Record<string, unknown>
+  trackHref?: string
 }) {
+  const [busy, setBusy] = useState(false)
+
+  const doExcel = async () => {
+    setBusy(true)
+    try {
+      await exportSubmissionExcel(props.exportKind, props.exportRow)
+    } finally {
+      setBusy(false)
+    }
+  }
+
   return (
     <div className="success-wrap">
       <div className="success-mark">
@@ -97,7 +132,29 @@ export function SuccessScreen(props: {
       <h2 style={{ fontSize: 22, fontWeight: 700 }}>{props.title}</h2>
       <div className="success-ref">{props.reference}</div>
       <p style={{ color: 'var(--muted)', fontSize: 14.5, lineHeight: 1.6 }}>{props.message}</p>
-      <div style={{ display: 'flex', gap: 12, justifyContent: 'center', marginTop: 26 }}>
+
+      <div className="export-bar">
+        <span className="export-bar-label">Keep a copy</span>
+        <div className="export-bar-btns">
+          <button className="btn btn-secondary" disabled={busy} onClick={doExcel}>
+            {busy ? <IconSpinner /> : <IconDownload />} Excel
+          </button>
+          <button
+            className="btn btn-secondary"
+            onClick={() => exportSubmissionCsv(props.exportKind, props.exportRow)}
+          >
+            <IconDownload /> CSV
+          </button>
+        </div>
+      </div>
+
+      {props.trackHref && (
+        <a className="track-link" href={props.trackHref}>
+          Track this order&apos;s shipment status →
+        </a>
+      )}
+
+      <div style={{ display: 'flex', gap: 12, justifyContent: 'center', marginTop: 22 }}>
         <button className="btn btn-secondary" onClick={props.onHome}>
           Back to FCS OS
         </button>

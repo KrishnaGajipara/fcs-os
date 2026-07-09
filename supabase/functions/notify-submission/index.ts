@@ -53,6 +53,22 @@ const esc = (v: unknown): string =>
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c] as string)
   );
 
+const encoder = new TextEncoder();
+async function orderManageToken(ref: string): Promise<string> {
+  const secret = Deno.env.get("ORDER_TOKEN_SECRET");
+  if (!secret) return "";
+  const key = await crypto.subtle.importKey(
+    "raw", encoder.encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"],
+  );
+  const sig = await crypto.subtle.sign("HMAC", key, encoder.encode(ref));
+  return [...new Uint8Array(sig)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+function siteBase(): string {
+  const url = Deno.env.get("SITE_URL") ?? "https://krishnagajipara.github.io/fcs-os/";
+  return url.endsWith("/") ? url : url + "/";
+}
+
 const fmtDate = (iso: string | null): string => {
   if (!iso) return "—";
   const d = new Date(iso.length <= 10 ? iso + "T12:00:00" : iso);
@@ -103,7 +119,16 @@ function shell(kind: string, reference: string, inner: string): string {
 }
 
 // deno-lint-ignore no-explicit-any
-function materialOrderEmail(r: any): { subject: string; html: string } {
+async function materialOrderEmail(r: any): Promise<{ subject: string; html: string }> {
+  const token = await orderManageToken(r.reference);
+  const manageUrl = `${siteBase()}#/track?ref=${encodeURIComponent(r.reference)}${token ? `&m=${token}` : ""}`;
+  const manageCta = `
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:20px 0 4px;">
+      <tr><td style="background:#f6f7f9;border:1px solid #e4e7ec;border-radius:6px;padding:16px 18px;">
+        <div style="font-size:13px;color:#5f6b7a;margin-bottom:10px;">Warehouse — update the shipment status once you begin preparing or ship this order:</div>
+        <a href="${manageUrl}" style="display:inline-block;background:#1f5788;color:#ffffff;text-decoration:none;font-weight:700;font-size:14px;padding:11px 22px;border-radius:6px;">Update shipment status &rarr;</a>
+      </td></tr>
+    </table>`;
   // deno-lint-ignore no-explicit-any
   const items: any[] = Array.isArray(r.items) ? r.items : [];
   const itemRows = items.map((it, i) => `
@@ -124,7 +149,8 @@ function materialOrderEmail(r: any): { subject: string; html: string } {
       ${row("Needed by (ship-out)", `<span style="color:#b03a2e;">${fmtDate(r.needed_by)}</span>`)}
       ${r.notes ? row("Notes", esc(r.notes)) : ""}
     </table>
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #e4e7ec;border-radius:6px;border-collapse:separate;overflow:hidden;">
+    ${manageCta}
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #e4e7ec;border-radius:6px;border-collapse:separate;overflow:hidden;margin-top:20px;">
       <tr style="background:#f6f7f9;">
         <th align="left" style="padding:9px 12px;color:#5f6b7a;font-size:11px;letter-spacing:1px;text-transform:uppercase;">#</th>
         <th align="left" style="padding:9px 12px;color:#5f6b7a;font-size:11px;letter-spacing:1px;text-transform:uppercase;">Item</th>
@@ -140,23 +166,60 @@ function materialOrderEmail(r: any): { subject: string; html: string } {
   };
 }
 
+const yesNo = (v: unknown, note?: string | null): string =>
+  `<strong style="color:${v ? "#b03a2e" : "#5f6b7a"};">${v ? "Yes" : "No"}</strong>` +
+  (v && note ? ` — ${esc(note)}` : "");
+
 // deno-lint-ignore no-explicit-any
 function timesheetEmail(r: any): { subject: string; html: string } {
+  // deno-lint-ignore no-explicit-any
+  const emps: any[] = Array.isArray(r.employees) ? r.employees : [];
+  const crewRows = emps.map((e) => `
+    <tr>
+      <td style="padding:7px 10px;border-bottom:1px solid #edf0f3;font-size:13px;font-weight:600;color:#1a2433;">${esc(e.name)}</td>
+      <td style="padding:7px 10px;border-bottom:1px solid #edf0f3;font-size:12px;color:#5f6b7a;">${fmtTime(e.time_in)}–${fmtTime(e.time_out)}</td>
+      <td align="center" style="padding:7px 10px;border-bottom:1px solid #edf0f3;font-size:13px;">${esc(e.reg_hours ?? 0)}</td>
+      <td align="center" style="padding:7px 10px;border-bottom:1px solid #edf0f3;font-size:13px;">${esc(e.ot_hours || "—")}</td>
+      <td align="center" style="padding:7px 10px;border-bottom:1px solid #edf0f3;font-size:13px;">${esc(e.pt_hours || "—")}</td>
+      <td align="right" style="padding:7px 10px;border-bottom:1px solid #edf0f3;font-size:13px;font-weight:700;">${esc(e.total ?? 0)}</td>
+    </tr>`).join("");
+
   const inner = `
     <h1 style="margin:0 0 4px;color:#1a2433;font-size:20px;">Timesheet ${esc(r.reference)}</h1>
-    <p style="margin:0 0 18px;color:#5f6b7a;font-size:14px;">New timesheet submission.</p>
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #e4e7ec;border-radius:6px;border-collapse:separate;overflow:hidden;">
-      ${row("Employee", esc(r.employee_name))}
+    <p style="margin:0 0 18px;color:#5f6b7a;font-size:14px;">New daily crew timesheet — ${emps.length} employee${emps.length === 1 ? "" : "s"}, ${esc(r.total_hours)} man-hours.</p>
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #e4e7ec;border-radius:6px;border-collapse:separate;overflow:hidden;margin-bottom:18px;">
       ${row("Job #", esc(r.job_number), true)}
       ${row("Date", fmtDate(r.work_date))}
-      ${row("Time in / out", `${fmtTime(r.time_in)} — ${fmtTime(r.time_out)}`)}
-      ${row("Break", `${r.break_minutes ?? 0} min`)}
-      ${row("Total hours", `<span style="font-size:16px;">${esc(r.total_hours)}</span>`)}
+      ${r.shift ? row("Shift", esc(r.shift)) : ""}
+      ${r.job_floor ? row("Job floor / area", esc(r.job_floor)) : ""}
+      ${r.weather ? row("Weather / temp", esc(r.weather)) : ""}
+    </table>
+
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #e4e7ec;border-radius:6px;border-collapse:separate;overflow:hidden;margin-bottom:18px;">
+      <tr style="background:#f6f7f9;">
+        <th align="left" style="padding:8px 10px;color:#5f6b7a;font-size:10.5px;letter-spacing:0.8px;text-transform:uppercase;">Employee</th>
+        <th align="left" style="padding:8px 10px;color:#5f6b7a;font-size:10.5px;letter-spacing:0.8px;text-transform:uppercase;">In–Out</th>
+        <th align="center" style="padding:8px 10px;color:#5f6b7a;font-size:10.5px;letter-spacing:0.8px;text-transform:uppercase;">Reg</th>
+        <th align="center" style="padding:8px 10px;color:#5f6b7a;font-size:10.5px;letter-spacing:0.8px;text-transform:uppercase;">OT</th>
+        <th align="center" style="padding:8px 10px;color:#5f6b7a;font-size:10.5px;letter-spacing:0.8px;text-transform:uppercase;">PT</th>
+        <th align="right" style="padding:8px 10px;color:#5f6b7a;font-size:10.5px;letter-spacing:0.8px;text-transform:uppercase;">Total</th>
+      </tr>
+      ${crewRows}
+    </table>
+
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #e4e7ec;border-radius:6px;border-collapse:separate;overflow:hidden;">
+      ${row("Pre-task", yesNo(r.pre_task))}
+      ${row("Inspections", yesNo(r.inspections, r.inspections_note))}
+      ${row("Slip work", yesNo(r.slip_work))}
+      ${row("Work stoppage", yesNo(r.work_stoppage, r.work_stoppage_note))}
+      ${row("Injuries", yesNo(r.injuries, r.injuries_note))}
       ${r.work_performed ? row("Work performed", esc(r.work_performed)) : ""}
       ${r.notes ? row("Notes", esc(r.notes)) : ""}
     </table>`;
+
+  const crewName = emps.length === 1 ? esc(emps[0]?.name ?? "") : `${emps.length} employees`;
   return {
-    subject: `[FCS OS] Timesheet ${r.reference} — ${r.employee_name} — Job #${r.job_number} — ${fmtDate(r.work_date)}`,
+    subject: `[FCS OS] Timesheet ${r.reference} — ${crewName} — Job #${r.job_number} — ${fmtDate(r.work_date)}`,
     html: shell("Timesheet", r.reference, inner),
   };
 }
@@ -234,7 +297,7 @@ Deno.serve(async (req) => {
   let msg: { subject: string; html: string };
   switch (table) {
     case "material_orders":
-      msg = materialOrderEmail(record);
+      msg = await materialOrderEmail(record);
       break;
     case "timesheets":
       msg = timesheetEmail(record);

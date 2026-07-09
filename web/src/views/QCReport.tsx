@@ -36,6 +36,7 @@ export function QCReport(props: { onHome: () => void }) {
   const [progress, setProgress] = useState('')
   const [submitError, setSubmitError] = useState('')
   const [doneRef, setDoneRef] = useState('')
+  const [doneRow, setDoneRow] = useState<Record<string, unknown> | null>(null)
 
   const addFiles = (list: FileList | File[]) => {
     const incoming = [...list].filter((f) => f.type.startsWith('image/'))
@@ -97,7 +98,7 @@ export function QCReport(props: { onHome: () => void }) {
 
       // 2. insert report
       setProgress('Saving report…')
-      const { error } = await supabase.from('qc_reports').insert({
+      const payload = {
         reference,
         job_number: jobNumber.trim(),
         report_date: reportDate,
@@ -109,9 +110,11 @@ export function QCReport(props: { onHome: () => void }) {
         corrective_actions: corrective.trim() || null,
         result,
         photos: paths,
-      })
+      }
+      const { error } = await supabase.from('qc_reports').insert(payload)
       if (error) throw new Error(error.message)
 
+      setDoneRow({ ...payload, created_at: new Date().toISOString() })
       setDoneRef(reference)
       window.scrollTo(0, 0)
     } catch {
@@ -127,6 +130,7 @@ export function QCReport(props: { onHome: () => void }) {
   const reset = () => {
     photos.forEach((p) => URL.revokeObjectURL(p.preview))
     setDoneRef('')
+    setDoneRow(null)
     setArea('')
     setWorkInspected('')
     setObservations('')
@@ -137,7 +141,7 @@ export function QCReport(props: { onHome: () => void }) {
     setErrors({})
   }
 
-  if (doneRef) {
+  if (doneRef && doneRow) {
     return (
       <SuccessScreen
         title="QC report filed"
@@ -145,6 +149,8 @@ export function QCReport(props: { onHome: () => void }) {
         message="The office has been notified by email, including links to your photos. Keep this reference for the job file."
         onReset={reset}
         onHome={props.onHome}
+        exportKind="qc_report"
+        exportRow={doneRow}
       />
     )
   }
