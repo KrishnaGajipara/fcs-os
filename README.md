@@ -7,7 +7,7 @@ office automatically. The office manages everything from a password-protected
 
 **Live (Vercel):** https://fcs-os.vercel.app/
 **Live (GitHub Pages mirror):** https://krishnagajipara.github.io/fcs-os/
-**Admin:** https://fcs-os.vercel.app/#/admin — default password `Fine123456!` (changeable in-app)
+**Admin:** https://fcs-os.vercel.app/#/admin — default password same as computer password, changeable in-app
 
 ## Architecture
 
