@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import logo from './assets/fine-logo.png'
+import logo from './assets/os-logo.jpeg'
 import loadingAnimation from './assets/fcs-loading.gif'
 import { useRoute, type Route } from './lib/router'
 import { IconClipboard, IconClock, IconGrid, IconLock, IconTruck } from './components/ui'
@@ -72,7 +72,7 @@ export default function App() {
         <aside className="sidebar">
           <div className="sidebar-brand">
             <div className="brand-logo-tile">
-              <img src={logo} alt="FINE — Fine Construction Specialties" />
+              <img src={logo} alt="FCS OS" />
             </div>
             <div>
               <div className="brand-name">FCS OS</div>
