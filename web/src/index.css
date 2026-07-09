@@ -75,7 +75,7 @@ input, select, textarea { font-family: inherit; }
   height: auto;
   display: block;
   mix-blend-mode: multiply;
-  clip-path: inset(4px round 22px);
+  clip-path: inset(1px round 18px);
   filter: contrast(1.03) saturate(0.96);
 }
 
@@ -84,8 +84,8 @@ input, select, textarea { font-family: inherit; }
   position: absolute;
   width: min(46vw, 340px);
   aspect-ratio: 742 / 294;
-  border-radius: 22px;
-  box-shadow: inset 0 0 0 14px #f7f7f6, 0 0 24px 18px #f7f7f6;
+  border-radius: 18px;
+  box-shadow: inset 0 0 0 3px #f7f7f6, 0 0 18px 10px #f7f7f6;
   pointer-events: none;
 }
 
