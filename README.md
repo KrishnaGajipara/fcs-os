@@ -1,89 +1,111 @@
 # FCS OS — Fine Construction Specialties Operating System
 
-Internal operations portal. Phase 1: **Material Order**, **Timesheet**, and
-**QC Report** forms. Each submission is stored in the database and emailed to
-the office automatically.
+Internal operations portal. Employees submit **Material Orders**, **Timesheets**,
+and **QC Reports**; every submission is stored in the database and emailed to the
+office automatically. The office manages everything from a password-protected
+**Admin Dashboard**.
 
-**Live site:** https://krishnagajipara.github.io/fcs-os/
+**Live (Vercel):** https://fcs-os.vercel.app/
+**Live (GitHub Pages mirror):** https://krishnagajipara.github.io/fcs-os/
+**Admin:** https://fcs-os.vercel.app/#/admin — default password `Fine123456!` (changeable in-app)
 
 ## Architecture
 
 | Piece | Where | Notes |
 | --- | --- | --- |
-| Frontend | `web/` — React + Vite, deployed to GitHub Pages | Static SPA, hash routing |
+| Frontend | `web/` — React + Vite | Deployed to Vercel (Git integration) and GitHub Pages. Hash routing. |
 | Database | Supabase project `aqtgokcftwsnyoqmoxnh` ("FCS OS") | Postgres + RLS |
 | Storage | Supabase bucket `qc-photos` (private) | QC photo uploads |
-| Email | Supabase Edge Function `notify-submission` → Resend | Fired by DB triggers |
+| Email | Edge function `notify-submission` → Resend | Fired by DB triggers |
+| Admin backend | Edge function `admin-api` | Password auth, HMAC session tokens, service-role reads |
+| Order tracking | Edge function `order-status` | Public status read; warehouse updates via signed link |
 
-### Data flow
+### Submission flow
 
-1. Employee submits a form (anon key, **insert-only** row level security —
-   the public site can never read submissions back).
-2. An `AFTER INSERT` trigger (`db/003_webhooks.sql`) calls the
-   `notify-submission` edge function through `pg_net`.
-3. The function renders a branded HTML email and sends it via the configured
-   provider. QC photo links are 30-day signed URLs into the private bucket.
+1. Employee submits a form using the **anon** key (RLS = insert-only; the public
+   site can never read submissions back).
+2. An `AFTER INSERT` trigger calls `notify-submission` via `pg_net`, which sends a
+   branded email. Material-order emails include a secure "Update shipment status"
+   link for the warehouse. QC photo links are 30-day signed URLs.
+3. The employee sees a tracking link on the success screen and can download a
+   branded Excel or CSV copy of the submission.
 
-### Database tables
+### Order status workflow
 
-- `materials` — the full parts catalog (130 items) transcribed from the paper
-  Lead Job / Painting order sheets. Edit in the Supabase dashboard to
-  add/retire items; the site picks changes up automatically.
-- `material_orders` — submitted orders (`items` is a JSON array of
-  `{name, list, quantity, note}`).
-- `timesheets` — daily hours per employee/job.
+- Warehouse email → "Update shipment status" → tracking page (`#/track?ref=…&m=…`).
+  The `m` token is `HMAC(ORDER_TOKEN_SECRET, reference)`; only the email holds it.
+- Employees open `#/track?ref=…` (no token) to see read-only status + a timeline.
+- The office changes status from the Admin dashboard (authenticated).
+- Every change is logged to `material_order_events` for the timeline.
+
+### Database tables (`public`)
+
+- `materials` — 130-item parts catalog (Lead Job + Painting) from the scanned
+  sheets. Edit in the Supabase dashboard; the site picks up changes automatically.
+- `material_orders` — orders (`items` JSON: `{name, list, quantity, note}`),
+  `status` ∈ pending/processing/shipped/cancelled.
+- `material_order_events` — status history for the tracking timeline.
+- `timesheets` — daily crew reports: `employees` JSON array
+  (`{name, time_in, time_out, break_minutes, reg_hours, ot_hours, pt_hours, total}`)
+  plus shift, job_floor, weather, and yes/no site conditions
+  (work_stoppage, injuries, pre_task, inspections, slip_work).
 - `qc_reports` — inspections incl. result and photo paths.
+- `admin_settings` — salted SHA-256 hash of the admin password (service-role only).
 
-## Changing the notification recipient
+## Admin dashboard
 
-The recipient is **not** hard-coded. From `fcs-os/`:
+`#/admin`, password-gated. Stat tiles (today / pending / this week / total), tabs
+for each submission type, date-range + search filters, detail drawers, live status
+management for orders, QC photo links, per-record and list-level Excel/CSV export,
+and an in-app change-password screen.
 
+## Common changes
+
+**Notification recipient** (not hard-coded):
 ```sh
 supabase secrets set --project-ref aqtgokcftwsnyoqmoxnh NOTIFY_EMAIL=warehouse@company.com
 ```
-
-Comma-separate for multiple recipients. Until a company domain is verified in
-Resend, the free tier only delivers to the Resend account owner's inbox
-(krishnagajipara215@gmail.com) from `onboarding@resend.dev`. After verifying a
-domain in Resend → Domains, also set:
-
+Comma-separate for multiple. Until a company domain is verified in Resend, the free
+tier only delivers to the Resend account owner (krishnagajipara215@gmail.com) from
+`onboarding@resend.dev`. After verifying a domain in Resend → Domains:
 ```sh
 supabase secrets set --project-ref aqtgokcftwsnyoqmoxnh FROM_EMAIL="FCS OS <os@yourdomain.com>"
 ```
 
-## Changing the email provider later
-
-`supabase/functions/notify-submission/index.ts` has a `PROVIDERS` map.
-Add a sender function for the new provider, then:
-
+**Tracking-link base URL** (used in warehouse emails):
 ```sh
-supabase secrets set --project-ref aqtgokcftwsnyoqmoxnh EMAIL_PROVIDER=<name> <NAME>_API_KEY=...
-supabase functions deploy notify-submission --project-ref aqtgokcftwsnyoqmoxnh --no-verify-jwt --use-api
+supabase secrets set --project-ref aqtgokcftwsnyoqmoxnh SITE_URL=https://fcs-os.vercel.app/
 ```
+
+**Admin password** — change it in-app (Admin → Change password), or reset the
+`admin_settings` row.
+
+**Email provider** — `supabase/functions/notify-submission/index.ts` has a
+`PROVIDERS` map; add a sender, then set `EMAIL_PROVIDER` and redeploy.
+
+## Deploying
+
+- **Vercel** auto-deploys on push to `main` (config in `vercel.json`; builds
+  `web/` and serves `web/dist`). Public Supabase vars live in `web/.env.production`.
+- **GitHub Pages** mirror: `cd web && npm run build`, then push `web/dist` to the
+  `gh-pages` branch.
 
 ## Local development
 
 ```sh
-cd web
-npm install
-npm run dev        # needs web/.env with VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY
-```
-
-## Deploying the site
-
-```sh
-cd web && npm run build
-cd dist && git init -b gh-pages && git add -A && git commit -m deploy
-git push -f https://github.com/KrishnaGajipara/fcs-os.git gh-pages
+cd web && npm install && npm run dev   # needs web/.env with VITE_SUPABASE_* vars
 ```
 
 ## Repo layout
 
 ```
-db/        SQL migrations + canonical materials catalog (catalog.py)
-supabase/  edge function source
+db/        SQL migrations (001–006) + catalog.py (parts catalog source of truth)
+supabase/  edge functions: notify-submission, admin-api, order-status
 scripts/   sbq.py — run SQL via the Supabase Management API
-web/       frontend
+web/        frontend
 ```
 
-Secrets (`.env` at the repo root) are intentionally not committed.
+`web/.env.production` holds only the **public** anon key (safe to commit — it ships
+in the browser bundle and is protected by RLS). Real secrets (service role, Resend
+key, admin/HMAC secrets) live only in `.env` at the repo root (gitignored) and in
+Supabase function secrets.
