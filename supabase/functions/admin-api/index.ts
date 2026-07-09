@@ -167,6 +167,147 @@ Deno.serve(async (req) => {
       return json({ url: data.signedUrl });
     }
 
+    // ---- material categories ----
+    case "categories": {
+      const { data, error } = await admin
+        .from("material_categories")
+        .select("*")
+        .order("sort_order");
+      if (error) return json({ error: "query failed" }, 500);
+      return json({ categories: data });
+    }
+
+    case "create_category": {
+      const name = String(payload.name ?? "").trim();
+      if (!name) return json({ error: "Category name is required." }, 400);
+      const slug = name
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-+|-+$/g, "")
+        .slice(0, 40);
+      if (!slug) return json({ error: "Could not derive a slug from that name." }, 400);
+      const { data: maxRow } = await admin
+        .from("material_categories")
+        .select("sort_order")
+        .order("sort_order", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      const sort_order = (maxRow?.sort_order ?? 0) + 1;
+      const { data, error } = await admin
+        .from("material_categories")
+        .insert({ slug, name, sort_order })
+        .select()
+        .single();
+      if (error) {
+        const msg = error.code === "23505" ? "A category with that name already exists." : "Could not create category.";
+        return json({ error: msg }, 400);
+      }
+      return json({ category: data });
+    }
+
+    case "update_category": {
+      const id = String(payload.id ?? "");
+      if (!id) return json({ error: "missing id" }, 400);
+      const patch: Record<string, unknown> = {};
+      if (typeof payload.name === "string" && payload.name.trim()) patch.name = payload.name.trim();
+      if (typeof payload.active === "boolean") patch.active = payload.active;
+      if (typeof payload.sort_order === "number") patch.sort_order = payload.sort_order;
+      if (Object.keys(patch).length === 0) return json({ error: "nothing to update" }, 400);
+      const { data, error } = await admin
+        .from("material_categories")
+        .update(patch)
+        .eq("id", id)
+        .select()
+        .single();
+      if (error) return json({ error: "update failed" }, 500);
+      return json({ category: data });
+    }
+
+    case "delete_category": {
+      const id = String(payload.id ?? "");
+      if (!id) return json({ error: "missing id" }, 400);
+      const { data: cat } = await admin.from("material_categories").select("slug").eq("id", id).single();
+      if (!cat) return json({ error: "not found" }, 404);
+      const { count } = await admin
+        .from("materials")
+        .select("id", { count: "exact", head: true })
+        .eq("list", cat.slug);
+      if (count && count > 0) {
+        return json({ error: `This category still has ${count} material(s). Remove or move them first.` }, 400);
+      }
+      const { error } = await admin.from("material_categories").delete().eq("id", id);
+      if (error) return json({ error: "delete failed" }, 500);
+      return json({ ok: true });
+    }
+
+    // ---- materials ----
+    case "materials_all": {
+      const { data, error } = await admin
+        .from("materials")
+        .select("*")
+        .order("list")
+        .order("grp")
+        .order("sort_order");
+      if (error) return json({ error: "query failed" }, 500);
+      return json({ materials: data });
+    }
+
+    case "create_material": {
+      const list = String(payload.list ?? "").trim();
+      const name = String(payload.name ?? "").trim();
+      const grp = String(payload.grp ?? "Materials").trim() || "Materials";
+      const detail = payload.detail ? String(payload.detail).trim() : null;
+      if (!list || !name) return json({ error: "Category and name are required." }, 400);
+      const { data: maxRow } = await admin
+        .from("materials")
+        .select("sort_order")
+        .eq("list", list)
+        .eq("grp", grp)
+        .order("sort_order", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      const sort_order = (maxRow?.sort_order ?? 0) + 1;
+      const { data, error } = await admin
+        .from("materials")
+        .insert({ list, grp, name, detail, sort_order })
+        .select()
+        .single();
+      if (error) {
+        const msg = error.code === "23505" ? "That item already exists in this category/section." : "Could not create material.";
+        return json({ error: msg }, 400);
+      }
+      return json({ material: data });
+    }
+
+    case "update_material": {
+      const id = String(payload.id ?? "");
+      if (!id) return json({ error: "missing id" }, 400);
+      const patch: Record<string, unknown> = {};
+      if (typeof payload.name === "string" && payload.name.trim()) patch.name = payload.name.trim();
+      if (typeof payload.detail === "string") patch.detail = payload.detail.trim() || null;
+      if (typeof payload.grp === "string" && payload.grp.trim()) patch.grp = payload.grp.trim();
+      if (typeof payload.list === "string" && payload.list.trim()) patch.list = payload.list.trim();
+      if (typeof payload.active === "boolean") patch.active = payload.active;
+      if (typeof payload.sort_order === "number") patch.sort_order = payload.sort_order;
+      if (Object.keys(patch).length === 0) return json({ error: "nothing to update" }, 400);
+      const { data, error } = await admin
+        .from("materials")
+        .update(patch)
+        .eq("id", id)
+        .select()
+        .single();
+      if (error) return json({ error: "update failed" }, 500);
+      return json({ material: data });
+    }
+
+    case "delete_material": {
+      const id = String(payload.id ?? "");
+      if (!id) return json({ error: "missing id" }, 400);
+      const { error } = await admin.from("materials").delete().eq("id", id);
+      if (error) return json({ error: "delete failed" }, 500);
+      return json({ ok: true });
+    }
+
     case "change_password": {
       const current = String(payload.currentPassword ?? "");
       const next = String(payload.newPassword ?? "");

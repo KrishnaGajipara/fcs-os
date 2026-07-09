@@ -27,31 +27,53 @@ export function makeReference(prefix: 'MO' | 'TS' | 'QC'): string {
 
 export type MaterialRow = {
   id: string
-  list: 'lead' | 'painting'
-  grp: 'materials' | 'paperwork_signs'
+  list: string
+  grp: string
   name: string
   detail: string | null
   sort_order: number
 }
 
+export type CategoryRow = {
+  id: string
+  slug: string
+  name: string
+  sort_order: number
+}
+
+/** list holds the category's display name at submission time (e.g. "Lead
+ *  Job Order List") so emails/exports never need a live category lookup. */
 export type OrderItem = {
   name: string
-  list: 'lead' | 'painting' | 'custom'
+  list: string
   quantity: string
   note?: string
 }
 
 let materialsCache: MaterialRow[] | null = null
+let categoriesCache: CategoryRow[] | null = null
 
 export async function fetchMaterials(): Promise<MaterialRow[]> {
   if (materialsCache) return materialsCache
   const { data, error } = await supabase
     .from('materials')
     .select('id, list, grp, name, detail, sort_order')
+    .eq('active', true)
     .order('list')
     .order('grp')
     .order('sort_order')
   if (error) throw error
   materialsCache = data as MaterialRow[]
   return materialsCache
+}
+
+export async function fetchCategories(): Promise<CategoryRow[]> {
+  if (categoriesCache) return categoriesCache
+  const { data, error } = await supabase
+    .from('material_categories')
+    .select('id, slug, name, sort_order')
+    .order('sort_order')
+  if (error) throw error
+  categoriesCache = data as CategoryRow[]
+  return categoriesCache
 }

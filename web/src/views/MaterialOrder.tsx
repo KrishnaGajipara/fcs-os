@@ -1,21 +1,35 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
+  fetchCategories,
   fetchMaterials,
   makeReference,
   supabase,
+  type CategoryRow,
   type MaterialRow,
   type OrderItem,
 } from '../lib/supabase'
 import { Field, IconSpinner, SuccessScreen } from '../components/ui'
 
-type Tab = 'lead' | 'painting'
-
 type CustomRow = { id: number; name: string; quantity: string }
 
-const LIST_LABEL: Record<string, string> = {
-  lead: 'Lead Job',
-  painting: 'Painting',
-  custom: 'Custom',
+function fallbackCategories(materials: MaterialRow[]): CategoryRow[] {
+  const seen = new Set<string>()
+  const rows: CategoryRow[] = []
+  for (const material of materials) {
+    if (seen.has(material.list)) continue
+    seen.add(material.list)
+    rows.push({
+      id: material.list,
+      slug: material.list,
+      name: material.list
+        .split(/[-_]/)
+        .filter(Boolean)
+        .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+        .join(' '),
+      sort_order: rows.length + 1,
+    })
+  }
+  return rows
 }
 
 function todayISO(): string {
@@ -30,8 +44,9 @@ function todayISO(): string {
 export function MaterialOrder(props: { onHome: () => void }) {
   // catalog
   const [materials, setMaterials] = useState<MaterialRow[] | null>(null)
+  const [categories, setCategories] = useState<CategoryRow[] | null>(null)
   const [loadError, setLoadError] = useState(false)
-  const [tab, setTab] = useState<Tab>('lead')
+  const [tab, setTab] = useState<string>('')
   const [search, setSearch] = useState('')
 
   // order details
@@ -57,11 +72,31 @@ export function MaterialOrder(props: { onHome: () => void }) {
 
   const load = () => {
     setLoadError(false)
-    fetchMaterials()
-      .then(setMaterials)
+    Promise.allSettled([fetchMaterials(), fetchCategories()])
+      .then(([materialsResult, categoriesResult]) => {
+        if (materialsResult.status === 'rejected') {
+          throw materialsResult.reason
+        }
+        const mats = materialsResult.value
+        const cats =
+          categoriesResult.status === 'fulfilled' && categoriesResult.value.length > 0
+            ? categoriesResult.value
+            : fallbackCategories(mats)
+        setMaterials(mats)
+        setCategories(cats)
+        setTab((prev) =>
+          prev && cats.some((cat) => cat.slug === prev) ? prev : cats[0]?.slug || '',
+        )
+      })
       .catch(() => setLoadError(true))
   }
   useEffect(load, [])
+
+  const categoryName = useMemo(() => {
+    const m = new Map<string, string>()
+    categories?.forEach((c) => m.set(c.slug, c.name))
+    return m
+  }, [categories])
 
   const byId = useMemo(() => {
     const m = new Map<string, MaterialRow>()
@@ -72,18 +107,23 @@ export function MaterialOrder(props: { onHome: () => void }) {
   const visible = useMemo(() => {
     if (!materials) return []
     const q = search.trim().toLowerCase()
+    const currentTab = tab || categories?.[0]?.slug || ''
     return materials.filter(
-      (m) => m.list === tab && (!q || m.name.toLowerCase().includes(q)),
+      (m) => m.list === currentTab && (!q || m.name.toLowerCase().includes(q)),
     )
-  }, [materials, tab, search])
+  }, [materials, categories, tab, search])
 
   const groups = useMemo(() => {
-    const g: { label: string; items: MaterialRow[] }[] = []
-    const mats = visible.filter((m) => m.grp === 'materials')
-    const paper = visible.filter((m) => m.grp === 'paperwork_signs')
-    if (mats.length) g.push({ label: 'Materials & Equipment', items: mats })
-    if (paper.length) g.push({ label: 'Paperwork & Signs', items: paper })
-    return g
+    const order: string[] = []
+    const byGrp = new Map<string, MaterialRow[]>()
+    for (const m of visible) {
+      if (!byGrp.has(m.grp)) {
+        byGrp.set(m.grp, [])
+        order.push(m.grp)
+      }
+      byGrp.get(m.grp)!.push(m)
+    }
+    return order.map((label) => ({ label, items: byGrp.get(label)! }))
   }, [visible])
 
   const selected = useMemo(
@@ -125,13 +165,13 @@ export function MaterialOrder(props: { onHome: () => void }) {
     const items: OrderItem[] = [
       ...selected.map(({ row, n }) => ({
         name: row.name,
-        list: row.list,
+        list: categoryName.get(row.list) ?? row.list,
         quantity: String(n),
         ...(itemNotes[row.id]?.trim() ? { note: itemNotes[row.id].trim() } : {}),
       })),
       ...customValid.map((r) => ({
         name: r.name.trim(),
-        list: 'custom' as const,
+        list: 'Custom',
         quantity: r.quantity.trim(),
       })),
     ]
@@ -276,15 +316,15 @@ export function MaterialOrder(props: { onHome: () => void }) {
           <div className="card-body">
             <div className="catalog-toolbar">
               <div className="segmented">
-                <button className={tab === 'lead' ? 'on' : ''} onClick={() => setTab('lead')}>
-                  Lead Job Order List
-                </button>
-                <button
-                  className={tab === 'painting' ? 'on' : ''}
-                  onClick={() => setTab('painting')}
-                >
-                  Painting Order List
-                </button>
+                {categories?.map((c) => (
+                  <button
+                    key={c.slug}
+                    className={tab === c.slug ? 'on' : ''}
+                    onClick={() => setTab(c.slug)}
+                  >
+                    {c.name}
+                  </button>
+                ))}
               </div>
               <input
                 className="input"
@@ -424,7 +464,7 @@ export function MaterialOrder(props: { onHome: () => void }) {
                   <span className="qty">{n}</span>
                   <span className="nm">
                     {row.name}
-                    <span className="src">{LIST_LABEL[row.list]}</span>
+                    <span className="src">{categoryName.get(row.list) ?? row.list}</span>
                     <input
                       className="note-input"
                       placeholder="Line note (size, brand…)"

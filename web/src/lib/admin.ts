@@ -143,3 +143,88 @@ export async function signedPhoto(path: string): Promise<string> {
   const d = await call<{ url: string }>({ action: 'signed_photo', token: getToken(), path })
   return d.url
 }
+
+/* ---- Materials & categories management ---- */
+
+export type AdminCategory = {
+  id: string
+  slug: string
+  name: string
+  sort_order: number
+  active: boolean
+  created_at: string
+}
+
+export type AdminMaterial = {
+  id: string
+  list: string
+  grp: string
+  name: string
+  detail: string | null
+  sort_order: number
+  active: boolean
+  created_at: string
+}
+
+export async function fetchCategoriesAdmin(): Promise<AdminCategory[]> {
+  const d = await call<{ categories: AdminCategory[] }>({ action: 'categories', token: getToken() })
+  return d.categories
+}
+
+export async function createCategory(name: string): Promise<AdminCategory> {
+  const d = await call<{ category: AdminCategory }>({ action: 'create_category', token: getToken(), name })
+  return d.category
+}
+
+export async function updateCategory(
+  id: string,
+  patch: Partial<Pick<AdminCategory, 'name' | 'active' | 'sort_order'>>,
+): Promise<AdminCategory> {
+  const d = await call<{ category: AdminCategory }>({
+    action: 'update_category',
+    token: getToken(),
+    id,
+    ...patch,
+  })
+  return d.category
+}
+
+export async function deleteCategory(id: string): Promise<void> {
+  await call({ action: 'delete_category', token: getToken(), id })
+}
+
+export async function fetchMaterialsAdmin(): Promise<AdminMaterial[]> {
+  const d = await call<{ materials: AdminMaterial[] }>({ action: 'materials_all', token: getToken() })
+  return d.materials
+}
+
+export async function createMaterial(input: {
+  list: string
+  grp: string
+  name: string
+  detail?: string
+}): Promise<AdminMaterial> {
+  const d = await call<{ material: AdminMaterial }>({
+    action: 'create_material',
+    token: getToken(),
+    ...input,
+  })
+  return d.material
+}
+
+export async function updateMaterial(
+  id: string,
+  patch: Partial<Pick<AdminMaterial, 'name' | 'detail' | 'grp' | 'list' | 'active' | 'sort_order'>>,
+): Promise<AdminMaterial> {
+  const d = await call<{ material: AdminMaterial }>({
+    action: 'update_material',
+    token: getToken(),
+    id,
+    ...patch,
+  })
+  return d.material
+}
+
+export async function deleteMaterial(id: string): Promise<void> {
+  await call({ action: 'delete_material', token: getToken(), id })
+}

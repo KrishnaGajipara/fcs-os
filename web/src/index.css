@@ -52,6 +52,30 @@ h1, h2, h3, p { margin: 0; }
 button { font-family: inherit; }
 input, select, textarea { font-family: inherit; }
 
+/* ---- Startup loading screen --------------------------------------------- */
+
+.loading-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #f8f8f8;
+  transition: opacity 560ms ease, visibility 560ms ease;
+}
+
+.loading-screen.leaving {
+  opacity: 0;
+  visibility: hidden;
+}
+
+.loading-screen img {
+  width: min(100vw, 800px);
+  height: auto;
+  display: block;
+}
+
 /* ---- App shell ---------------------------------------------------------- */
 
 .shell { display: flex; min-height: 100%; }
@@ -774,6 +798,59 @@ input, select, textarea { font-family: inherit; }
 .r-pass { background: var(--ok-soft); color: var(--ok); }
 .r-pass_with_notes { background: var(--warn-soft); color: var(--warn); }
 .r-fail { background: var(--danger-soft); color: var(--danger); }
+
+/* ---- Materials manager ------------------------------------------------------ */
+
+.cat-bar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+
+.cat-pill {
+  display: flex; align-items: stretch;
+  border: 1px solid var(--line); border-radius: 999px; overflow: hidden;
+  background: var(--surface);
+}
+.cat-pill.selected { border-color: var(--accent); background: var(--accent-soft); }
+.cat-pill.inactive { opacity: 0.55; }
+
+.cat-pill-main {
+  display: flex; align-items: center; gap: 8px;
+  border: none; background: transparent; cursor: pointer;
+  padding: 7px 6px 7px 16px; font-size: 13.5px; font-weight: 600; color: var(--ink);
+}
+.cat-pill-count {
+  font-size: 11px; font-weight: 700; color: var(--muted);
+  background: var(--paper); border-radius: 999px; padding: 1px 7px;
+}
+.cat-pill.selected .cat-pill-count { background: #fff; color: var(--accent); }
+.cat-pill-tag {
+  font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px;
+  color: var(--warn); background: var(--warn-soft); border-radius: 4px; padding: 1px 6px;
+}
+
+.cat-pill-menu { display: flex; align-items: center; padding-right: 6px; }
+.cat-pill-menu .btn { padding: 6px 7px; font-size: 12px; }
+
+.cat-add-form { display: flex; gap: 8px; align-items: center; }
+.cat-add-form .input { width: 200px; padding: 7px 10px; font-size: 13.5px; }
+.cat-add-form .btn { padding: 7px 14px; }
+
+.mgr-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 4px; }
+
+.mgr-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 9px 12px;
+  border: 1px solid var(--line-soft); border-radius: var(--radius);
+  background: var(--surface);
+}
+.mgr-row.inactive { opacity: 0.55; }
+.mgr-row.editing { align-items: center; }
+.mgr-row.editing .input { padding: 7px 10px; font-size: 13.5px; }
+.mgr-name { font-size: 14px; font-weight: 550; }
+.mgr-actions { display: flex; gap: 4px; flex-shrink: 0; }
+.mgr-actions .btn { padding: 5px 8px; font-size: 12px; }
+
+.mgr-add { border-top: 1px dashed var(--line); padding-top: 4px; }
+.mgr-add-row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+.mgr-add-row .input { min-width: 160px; }
 
 /* drawer */
 .drawer-backdrop {

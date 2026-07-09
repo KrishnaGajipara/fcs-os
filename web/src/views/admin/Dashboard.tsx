@@ -16,6 +16,7 @@ import {
   type ExportKind,
 } from '../../lib/export'
 import { IconDownload, IconSpinner } from '../../components/ui'
+import { MaterialsManager } from './MaterialsManager'
 
 type Tab = 'material_orders' | 'timesheets' | 'qc_reports'
 type Range = 'today' | 'week' | 'month' | 'all'
@@ -103,6 +104,7 @@ export function Dashboard(props: {
   const [selected, setSelected] = useState<AnyRecord | null>(null)
   const [refreshing, setRefreshing] = useState(false)
   const [showPwd, setShowPwd] = useState(false)
+  const [showMaterials, setShowMaterials] = useState(false)
 
   useEffect(() => setLocal(props.data), [props.data])
 
@@ -147,6 +149,14 @@ export function Dashboard(props: {
     setSelected((s) => (s && 'status' in s && s.id === order.id ? updated : s))
   }
 
+  if (showMaterials) {
+    return (
+      <div className="admin">
+        <MaterialsManager onClose={() => setShowMaterials(false)} />
+      </div>
+    )
+  }
+
   return (
     <div className="admin">
       <div className="admin-topline">
@@ -157,6 +167,9 @@ export function Dashboard(props: {
         <div className="admin-actions">
           <button className="btn btn-secondary" onClick={refresh} disabled={refreshing}>
             {refreshing ? <IconSpinner /> : <RefreshIcon />} Refresh
+          </button>
+          <button className="btn btn-secondary" onClick={() => setShowMaterials(true)}>
+            Manage materials
           </button>
           <button className="btn btn-secondary" onClick={() => setShowPwd(true)}>
             Change password
