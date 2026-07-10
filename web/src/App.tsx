@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Analytics } from '@vercel/analytics/react'
 import logo from './assets/os-logo.jpeg'
 import loadingAnimation from './assets/fcs-loading.gif'
 import { useRoute, type Route } from './lib/router'
@@ -145,6 +146,7 @@ export default function App() {
           </main>
         </div>
       </div>
+      <Analytics />
     </>
   )
 }
