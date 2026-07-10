@@ -15,7 +15,7 @@ office automatically. The office manages everything from a password-protected
 | --- | --- | --- |
 | Frontend | `web/` — React + Vite | Deployed to Vercel (Git integration) and GitHub Pages. Hash routing. |
 | Database | Supabase project `aqtgokcftwsnyoqmoxnh` ("FCS OS") | Postgres + RLS |
-| Storage | Supabase bucket `qc-photos` (private) | QC photo uploads |
+| QC report data | `qc_reports.details` (JSONB) | Structured two-page Daily Quality Control Report |
 | Email | Edge function `notify-submission` → Resend | Fired by DB triggers |
 | Admin backend | Edge function `admin-api` | Password auth, HMAC session tokens, service-role reads |
 | Order tracking | Edge function `order-status` | Public status read; warehouse updates via signed link |
@@ -26,7 +26,7 @@ office automatically. The office manages everything from a password-protected
    site can never read submissions back).
 2. An `AFTER INSERT` trigger calls `notify-submission` via `pg_net`, which sends a
    branded email. Material-order emails include a secure "Update shipment status"
-   link for the warehouse. QC photo links are 30-day signed URLs.
+   link for the warehouse.
 3. The employee sees a tracking link on the success screen and can download a
    branded Excel or CSV copy of the submission.
 
@@ -49,14 +49,15 @@ office automatically. The office manages everything from a password-protected
   (`{name, time_in, time_out, break_minutes, reg_hours, ot_hours, pt_hours, total}`)
   plus shift, job_floor, weather, and yes/no site conditions
   (work_stoppage, injuries, pre_task, inspections, slip_work).
-- `qc_reports` — inspections incl. result and photo paths.
+- `qc_reports` — Daily Quality Control Reports. `details` stores all two-page
+  report readings, checks, coating applications, comments, and signoffs.
 - `admin_settings` — salted SHA-256 hash of the admin password (service-role only).
 
 ## Admin dashboard
 
 `#/admin`, password-gated. Stat tiles (today / pending / this week / total), tabs
 for each submission type, date-range + search filters, detail drawers, live status
-management for orders, QC photo links, per-record and list-level Excel/CSV export,
+management for orders, full Daily QC Report details, per-record and list-level Excel/CSV export,
 and an in-app change-password screen.
 
 ## Common changes
@@ -99,7 +100,7 @@ cd web && npm install && npm run dev   # needs web/.env with VITE_SUPABASE_* var
 ## Repo layout
 
 ```
-db/        SQL migrations (001–006) + catalog.py (parts catalog source of truth)
+db/        SQL migrations (001–008) + catalog.py (parts catalog source of truth)
 supabase/  edge functions: notify-submission, admin-api, order-status
 scripts/   sbq.py — run SQL via the Supabase Management API
 web/        frontend

@@ -245,6 +245,7 @@ input, select, textarea { font-family: inherit; }
 .grid.cols-2 { grid-template-columns: 1fr 1fr; }
 .grid.cols-3 { grid-template-columns: 1fr 1fr 1fr; }
 .grid.cols-4 { grid-template-columns: repeat(4, 1fr); }
+.grid.cols-5 { grid-template-columns: repeat(5, minmax(0, 1fr)); }
 
 .field { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
 
@@ -282,6 +283,78 @@ input, select, textarea { font-family: inherit; }
 .textarea { resize: vertical; min-height: 84px; }
 
 .field-error { font-size: 12.5px; color: var(--danger); }
+
+/* ---- Daily Quality Control Report --------------------------------------- */
+
+.qc-report .card-head h2 { font-size: 16px; }
+.qc-report-title { align-items: center; }
+.qc-fine-logo { width: 86px; height: auto; object-fit: contain; flex: 0 0 auto; }
+.qc-report-title .hint { display: block; margin-top: 3px; }
+.qc-page-chip {
+  flex: 0 0 auto;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--muted);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 5px 10px;
+}
+.qc-time-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
+.qc-time-pair .input { min-width: 0; }
+.qc-table-scroll { overflow-x: auto; margin-top: 10px; border: 1px solid var(--line); border-radius: var(--radius); }
+.qc-table { width: 100%; min-width: 800px; border-collapse: collapse; }
+.qc-table th {
+  padding: 8px 9px;
+  background: var(--ink);
+  color: #fff;
+  font-size: 10.5px;
+  letter-spacing: .25px;
+  line-height: 1.25;
+  text-align: left;
+  vertical-align: bottom;
+}
+.qc-table td { padding: 5px; border-top: 1px solid var(--line-soft); vertical-align: middle; }
+.qc-table td:first-child { font-family: var(--mono); color: var(--muted); text-align: center; }
+.qc-table .input { padding: 6px 7px; font-size: 13px; min-width: 82px; }
+.qc-table .qc-choice { justify-content: center; }
+.qc-question-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  padding: 11px 0;
+  border-bottom: 1px solid var(--line-soft);
+  font-size: 13.5px;
+  font-weight: 550;
+}
+.qc-question-row > span { max-width: 760px; }
+.qc-choice { display: inline-flex; flex: 0 0 auto; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+.qc-choice button {
+  border: 0;
+  border-right: 1px solid var(--line);
+  padding: 5px 9px;
+  min-width: 42px;
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.qc-choice button:last-child { border-right: none; }
+.qc-choice button.on { background: var(--accent); color: #fff; }
+.qc-check-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 24px; }
+.qc-check-grid .field { padding: 10px 0; border-bottom: 1px solid var(--line-soft); }
+.qc-check-list { display: flex; flex-wrap: wrap; gap: 7px 14px; min-height: 31px; align-items: center; }
+.qc-check { display: inline-flex; align-items: center; gap: 5px; font-size: 13px; color: var(--text); cursor: pointer; }
+.qc-check input { width: 15px; height: 15px; accent-color: var(--accent); }
+.qc-large-text { min-height: 170px; }
+.qc-location-text { min-height: 74px; }
+.qc-coating-block { padding-top: 2px; }
+.qc-coating-block + .qc-coating-block { margin-top: 26px; border-top: 2px solid var(--line); }
+.qc-coating-table { min-width: 680px; }
+.qc-wft-grid { display: grid; grid-template-columns: repeat(7, minmax(62px, 1fr)); gap: 7px; }
+.qc-note { color: var(--muted); font-size: 11.5px; line-height: 1.55; margin-top: 22px; }
 
 /* ---- Buttons ------------------------------------------------------------- */
 
@@ -1614,8 +1687,11 @@ body { background: #f6f7f9; }
   .sidebar-foot { display: none; }
   .topbar { padding: 14px 18px; }
   .content { padding: 18px 16px 48px; }
-  .grid.cols-2, .grid.cols-3, .grid.cols-4 { grid-template-columns: 1fr; }
+  .grid.cols-2, .grid.cols-3, .grid.cols-4, .grid.cols-5 { grid-template-columns: 1fr; }
   .module-grid { grid-template-columns: 1fr; }
+  .qc-fine-logo { display: none; }
+  .qc-check-grid { grid-template-columns: 1fr; }
+  .qc-wft-grid { grid-template-columns: repeat(4, minmax(56px, 1fr)); }
 }
 
 @media (min-width: 701px) and (max-width: 1080px) {

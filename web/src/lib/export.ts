@@ -1,6 +1,7 @@
 import type ExcelJS from 'exceljs'
 import logoUrl from '../assets/fine-logo.png'
 import type { OrderItem } from './supabase'
+import { normalizeDailyQCData, yesNoLabel, type DailyQCData } from './qc'
 
 /* ==========================================================================
    Branded exports — Excel (.xlsx) with the FINE logo + styling, and plain CSV.
@@ -215,6 +216,293 @@ async function saveWorkbook(wb: ExcelJS.Workbook, filename: string) {
   )
 }
 
+const QC_TEMPLATE_URL = `${import.meta.env.BASE_URL}templates/daily-qc-report-template.xlsx`
+const TIMESHEET_TEMPLATE_URL = `${import.meta.env.BASE_URL}templates/timesheet-template.xlsx`
+const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+const CHECKED = '\u2611'
+const EMPTY_BOX = '\u2610'
+
+function sheetDate(iso: string | null | undefined): string {
+  if (!iso) return ''
+  const d = new Date(iso.length <= 10 ? `${iso}T12:00:00` : iso)
+  return isNaN(d.getTime()) ? String(iso) : d.toLocaleDateString('en-US')
+}
+
+function xmlEscape(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+}
+
+function setInlineCell(xml: string, address: string, value: string): string {
+  const escapedAddress = address.replace(/\$/g, '\\$&')
+  const inlineCell = (attrs: string) => {
+    const style = attrs.match(/\ss="([^"]+)"/)?.[1]
+    const styleAttr = style ? ` s="${style}"` : ''
+    return `<c r="${address}"${styleAttr} t="inlineStr"><is><t xml:space="preserve">${xmlEscape(value)}</t></is></c>`
+  }
+  const emptyCellPattern = new RegExp(`<c r="${escapedAddress}"([^>]*)\\/>`)
+  if (emptyCellPattern.test(xml)) return xml.replace(emptyCellPattern, (_cell, attrs: string) => inlineCell(attrs))
+  const cellPattern = new RegExp(`<c r="${escapedAddress}"([^>]*)>[\\s\\S]*?<\\/c>`)
+  return xml.replace(emptyCellPattern, (_cell, attrs: string) => inlineCell(attrs))
+    .replace(cellPattern, (_cell, attrs: string) => inlineCell(attrs))
+}
+
+function applyCellPatches(xml: string, patches: Record<string, string>): string {
+  return Object.entries(patches).reduce((current, [address, value]) => setInlineCell(current, address, value), xml)
+}
+
+function addPatch(patches: Record<string, string>, address: string, value: unknown) {
+  const text = String(value ?? '').trim()
+  if (text) patches[address] = text
+}
+
+function box(on: boolean): string {
+  return on ? CHECKED : EMPTY_BOX
+}
+
+function markYesNo(value: string, yes = 'YES', no = 'NO'): string {
+  return `${box(value === 'yes')} ${yes}    ${box(value === 'no')} ${no}`
+}
+
+function markYesNoNA(value: string): string {
+  return `${box(value === 'yes')} YES    ${box(value === 'no')} NO    ${box(value === 'na')} N/A`
+}
+
+function dayLine(value: string): string {
+  const selected = value.trim().toUpperCase()
+  return ['M', 'T', 'W', 'TH', 'F', 'S', 'SU']
+    .map((day) => `${box(selected === day)} ${day}`)
+    .join('    ')
+    .replace(/^/, 'DAY:    ')
+}
+
+function withUnit(value: string, unit: string): string {
+  const text = value.trim()
+  return text ? `${text}${unit}` : unit
+}
+
+function wrapLines(text: string, maxChars: number, maxLines: number): string[] {
+  const clean = text.replace(/\r/g, '').trim()
+  if (!clean) return []
+  const paragraphs = clean.split('\n').flatMap((line) => line.trim() ? [line.trim()] : [''])
+  const lines: string[] = []
+  for (const paragraph of paragraphs) {
+    if (!paragraph) {
+      if (lines.length < maxLines) lines.push('')
+      continue
+    }
+    let current = ''
+    for (const word of paragraph.split(/\s+/)) {
+      const next = current ? `${current} ${word}` : word
+      if (next.length > maxChars && current) {
+        lines.push(current)
+        current = word
+        if (lines.length >= maxLines) return lines
+      } else {
+        current = next
+      }
+    }
+    if (current) lines.push(current)
+    if (lines.length >= maxLines) return lines
+  }
+  return lines.slice(0, maxLines)
+}
+
+function addWrappedRows(patches: Record<string, string>, column: string, startRow: number, endRow: number, text: string, maxChars: number) {
+  wrapLines(text, maxChars, endRow - startRow + 1).forEach((line, index) => {
+    patches[`${column}${startRow + index}`] = line
+  })
+}
+
+function optionChecked(values: string[], label: string): boolean {
+  const norm = (value: string) => value.toLowerCase().replace(/[^a-z]/g, '')
+  const wanted = norm(label)
+  return values.some((value) => norm(value) === wanted)
+}
+
+function surfaceMethodLine(d: DailyQCData): string {
+  const options = ['Power Tool', 'Hand Tool', 'Sanding', 'Solvent Cleaning', 'Power Wash']
+  const parts = options.map((label) => `${box(optionChecked(d.surface_preparation_methods, label))} ${label}`)
+  const hasOther = Boolean(d.surface_preparation_other.trim())
+  parts.push(`${box(hasOther)} Other${hasOther ? ` ${d.surface_preparation_other.trim()}` : '______________'}`)
+  return `Method:   ${parts.join('     ')}`
+}
+
+function coatingLine(application: DailyQCData['coating_applications'][number]): string {
+  const options = ['Primer', 'Intermediate', 'Finish', 'Intumescent', 'Stripe', 'Sealer']
+  const parts = options.map((label) => `${box(optionChecked(application.coatings, label))} ${label}`)
+  const hasOther = Boolean(application.coating_other.trim())
+  parts.push(`${box(hasOther)} Other${hasOther ? ` ${application.coating_other.trim()}` : '________________'}`)
+  return `Coating:    ${parts.join('    ')}`
+}
+
+function applicationMethodLine(application: DailyQCData['coating_applications'][number]): string {
+  const methods = [
+    ['Airless/Con. Spray', 'Airless/Con.Spray'],
+    ['Brush', 'Brush'],
+    ['Roller', 'Roller'],
+    ['Trowel', 'Trowel'],
+  ] as const
+  return `Method of Application:    ${methods
+    .map(([stored, label]) => `${box(optionChecked(application.application_methods, stored))} ${label}`)
+    .join('    ')}`
+}
+
+function blankLine(value: string, blank = '______________________________________'): string {
+  return value.trim() || blank
+}
+
+function wftLine(readings: string[]): string {
+  return `WFT Readings:      ${Array.from({ length: 7 }, (_, index) => readings[index]?.trim() || '').join(' / ')}`
+}
+
+function fillHeader(patches: Record<string, string>, q: AnyRow, d: DailyQCData, page: number) {
+  patches.P1 = `PAGE ${page} of ${d.page_total || '2'}`
+  patches.E3 = dayLine(d.day_of_week)
+  addPatch(patches, 'B4', sheetDate(q.report_date as string))
+  addPatch(patches, 'N4', d.contract_number)
+  addPatch(patches, 'B5', d.project || String(q.job_number ?? ''))
+}
+
+function fillCoatingBlock(patches: Record<string, string>, startRow: number, application: DailyQCData['coating_applications'][number]) {
+  const coatingRow = startRow + 2
+  const mixRow = startRow + 3
+  const manufactureRow = startRow + 4
+  const productRow = startRow + 5
+  const kitRow = startRow + 6
+  const shelfRow = startRow + 7
+  const methodRow = startRow + 8
+  const wftRow = startRow + 9
+
+  addWrappedRows(patches, 'D', startRow, startRow, application.application_locations, 115)
+  addWrappedRows(patches, 'A', startRow + 1, startRow + 1, application.application_locations.length > 115 ? application.application_locations.slice(115) : '', 150)
+  patches[`A${coatingRow}`] = coatingLine(application)
+  patches[`A${mixRow}`] = `Mix(s) Witnessed & Acceptable:    ${markYesNo(application.mix_witnessed_acceptable)}`
+  patches[`A${manufactureRow}`] = `Manufacture: ${application.manufacturer}`
+  patches[`A${productRow}`] = `Product Name: ${application.product_name}`
+  patches[`A${kitRow}`] = `Kit Size & Color: ${application.kit_size_color}`
+  patches[`A${shelfRow}`] = `Shelf Life: ${application.shelf_life}`
+  patches[`I${manufactureRow}`] = `Part: ${application.parts[0] ?? ''}`
+  patches[`I${productRow}`] = `Part: ${application.parts[1] ?? ''}`
+  patches[`I${kitRow}`] = `Part: ${application.parts[2] ?? ''}`
+  addPatch(patches, `K${manufactureRow}`, application.batch_lot_numbers[0])
+  addPatch(patches, `K${productRow}`, application.batch_lot_numbers[1])
+  addPatch(patches, `K${kitRow}`, application.batch_lot_numbers[2])
+  addPatch(patches, `M${manufactureRow}`, application.number_of_mixes)
+  ;[manufactureRow, productRow, kitRow].forEach((row, index) => {
+    const ordinal = ['1st', '2nd', '3rd'][index]
+    patches[`N${row}`] = `${ordinal} : ${application.material_temperatures[index] ?? ''}`
+    patches[`S${row}`] = `: ${application.mix_times[index] ?? ''}`
+  })
+  patches[`I${shelfRow}`] = `Reducer: ${application.reducer}        #: ${application.reducer_number}`
+  patches[`N${shelfRow}`] = `Pot Life: ${application.pot_life}`
+  patches[`A${methodRow}`] = applicationMethodLine(application)
+  patches[`N${methodRow}`] = `Total Gallons Applied: ${application.total_gallons_applied}`
+  patches[`A${wftRow}`] = `Required WFT: ${application.required_wft}`
+  patches[`F${wftRow}`] = wftLine(application.wft_readings)
+  patches[`S${wftRow}`] = `Avg WFT: ${application.average_wft}`
+}
+
+function dailyQCPatches(q: AnyRow): Record<string, Record<string, string>> {
+  const d = qcData(q)
+  const page1: Record<string, string> = {}
+  const page2: Record<string, string> = {}
+  fillHeader(page1, q, d, 1)
+  fillHeader(page2, q, d, 2)
+
+  addPatch(page1, 'C6', d.weather_am)
+  addPatch(page1, 'M6', d.weather_pm)
+  addPatch(page1, 'E7', d.workers_on_site)
+  addPatch(page1, 'M7', d.start_time)
+  addPatch(page1, 'R7', d.stop_time)
+  addPatch(page1, 'B10', d.ambient_location)
+
+  const ambientColumns = ['B', 'D', 'F', 'H']
+  d.ambient_readings.forEach((reading, index) => {
+    const col = ambientColumns[index]
+    if (!col) return
+    addPatch(page1, `${col}12`, reading.time)
+    page1[`${col}13`] = withUnit(reading.relative_humidity, '%')
+    page1[`${col}14`] = withUnit(reading.air_temperature, '°F')
+    page1[`${col}15`] = withUnit(reading.surface_temperature, '°F')
+    page1[`${col}16`] = withUnit(reading.dew_point, '°F')
+    addPatch(page1, `${col}17`, reading.surface_dew_point_depression)
+  })
+
+  d.instruments.slice(0, 4).forEach((instrument, index) => {
+    const row = 12 + index
+    addPatch(page1, `K${row}`, instrument.instrument)
+    addPatch(page1, `L${row}`, instrument.serial_number)
+    page1[`N${row}`] = instrument.calibrated ? markYesNo(instrument.calibrated, 'Y', 'N') : 'Y      N'
+    addPatch(page1, `P${row}`, instrument.standard_reading_1)
+    addPatch(page1, `R${row}`, instrument.standard_reading_2)
+    addPatch(page1, `T${row}`, instrument.standard_reading_3)
+  })
+  page1.K16 = `Has the Quality Control Supervisor collected & inspected the inspection equipment within the past 12 months?      ${markYesNo(d.equipment_inspected_within_12_months)}`
+
+  addWrappedRows(page1, 'A', 19, 30, d.description_of_areas_locations_work_performed, 145)
+  page1.A32 = `Surface Preparation Required:  SSPC SP-${d.surface_preparation_required}`
+  page1.K32 = `Surface Preparation Performed:  SSPC SP-${d.surface_preparation_performed}`
+  page1.A33 = `Surface Profile Required: ${d.surface_profile_required}`
+  page1.K33 = `Surface Profile Achieved: ${d.surface_profile_achieved}`
+  page1.A34 = surfaceMethodLine(d)
+  page1.A35 = `Is the surface to be painted:  Clean, Moisture Free, Free of oil, Grease, Dirt & other Contaminants?      ${markYesNo(d.surface_clean_moisture_free)}`
+  page1.A36 = `IF NO DO NOT PROCEED!  Explain: ${d.do_not_proceed_explanation}`
+  page1.A37 = `Was Any Hazardous Waste Generated?   ${markYesNo(d.hazardous_waste_generated)}.   If Yes was it properly stored & identified? ${markYesNo(d.hazardous_waste_properly_stored_identified)}`
+  page1.A38 = `COMMENTS: ${d.surface_preparation_comments}`
+  page1.A39 = `Light Meter Serial No. ${blankLine(d.light_meter_serial_number, '____________')}    Light Reading Inside Enclosure ${blankLine(d.light_readings[0]?.foot_candles ?? '', '______')} FC ${blankLine(d.light_readings[0]?.time ?? '', '______')} Time ${blankLine(d.light_readings[1]?.foot_candles ?? '', '______')} FC ${blankLine(d.light_readings[1]?.time ?? '', '______')} Time`
+  addPatch(page1, 'D41', d.competent_person_print)
+  addPatch(page1, 'O41', d.competent_person_signature)
+  addPatch(page1, 'D43', d.qc_supervisor_print)
+  addPatch(page1, 'O43', d.qc_supervisor_signature)
+
+  page2.A8 = `Sharp Edges and Weld Splatter Removed      ${markYesNoNA(d.sharp_edges_weld_splatter_removed)}`
+  page2.A9 = `Clean and Dry Abrasive      ${markYesNoNA(d.clean_dry_abrasive)}`
+  page2.A10 = `Type of Abrasive and Size ${blankLine(d.abrasive_type_size)}`
+  page2.A11 = `Compressed Air Check      ${markYesNoNA(d.compressed_air_check)}`
+  page2.A12 = `Nozzle Air Pressure ${blankLine(d.nozzle_air_pressure)}`
+  page2.A13 = `Blotter Test      ${markYesNoNA(d.blotter_test)}`
+  page2.A15 = `Any Safety Issues occur?      ${markYesNo(d.safety_issues_occurred, 'Yes', 'No')}`
+  page2.I15 = `If Yes was a copy sent to the field office?      ${markYesNo(d.safety_issue_copy_sent_to_field_office, 'Yes', 'No')}`
+  page2.A16 = `Are the workers wearing proper PPE?      ${markYesNo(d.workers_wearing_proper_ppe, 'Yes', 'No')}`
+  page2.I16 = `Is pre start Safety Talks being performed?      ${markYesNo(d.pre_start_safety_talks_performed, 'Yes', 'No')}`
+  fillCoatingBlock(page2, 18, d.coating_applications[0])
+  fillCoatingBlock(page2, 29, d.coating_applications[1])
+  page2.A39 = `Comments: ${d.coating_comments}`
+  addPatch(page2, 'D41', d.competent_person_print)
+  addPatch(page2, 'O41', d.competent_person_signature)
+  addPatch(page2, 'D43', d.qc_supervisor_print)
+  addPatch(page2, 'O43', d.qc_supervisor_signature)
+
+  return {
+    'xl/worksheets/sheet1.xml': page1,
+    'xl/worksheets/sheet2.xml': page2,
+  }
+}
+
+async function saveDailyQCTemplateWorkbook(q: AnyRow, filename: string) {
+  const [{ default: JSZip }, template] = await Promise.all([
+    import('jszip'),
+    fetch(QC_TEMPLATE_URL).then((res) => {
+      if (!res.ok) throw new Error(`Unable to load QC Excel template (${res.status})`)
+      return res.arrayBuffer()
+    }),
+  ])
+  const zip = await JSZip.loadAsync(template)
+  const patches = dailyQCPatches(q)
+  await Promise.all(Object.entries(patches).map(async ([path, cellPatches]) => {
+    const file = zip.file(path)
+    if (!file) throw new Error(`QC Excel template is missing ${path}`)
+    const xml = await file.async('string')
+    zip.file(path, applyCellPatches(xml, cellPatches))
+  }))
+  const blob = await zip.generateAsync({ type: 'blob', mimeType: XLSX_MIME })
+  download(blob, filename)
+}
+
 /* ---- CSV builder ---------------------------------------------------------- */
 
 function csvCell(v: unknown): string {
@@ -290,9 +578,67 @@ type EmployeeEntry = {
   ot_hours: number
   pt_hours: number
   total: number
+  location_of_work?: string | null
+  type_of_work?: string | null
+  payment?: string | null
+  code?: string | null
 }
 
 const yesNo = (v: unknown) => (v ? 'Yes' : 'No')
+const txt = (v: unknown): string => String(v ?? '').trim()
+
+type TimesheetDailyReport = {
+  ambient_time_1?: string
+  relative_humidity_1?: string
+  ambient_temp_1?: string
+  surface_temp_1?: string
+  dew_point_1?: string
+  ambient_time_2?: string
+  relative_humidity_2?: string
+  ambient_temp_2?: string
+  surface_temp_2?: string
+  dew_point_2?: string
+  paint_batch_part_a?: string
+  paint_batch_part_b?: string
+  paint_type?: string
+  mixing_time_part_a?: string
+  mixing_time_part_b?: string
+  mixing_time_combined?: string
+  surface_prep_performed?: string
+  surface_clean?: boolean
+  wet_mil_readings_a?: string
+  wet_mil_readings_b?: string
+  time_between_coats?: string
+  recoat_exceeded?: boolean
+  corrective_action?: string
+  remarks?: string
+}
+
+function timesheetDailyReport(t: AnyRow): TimesheetDailyReport {
+  return (t.daily_report && typeof t.daily_report === 'object' ? t.daily_report : {}) as TimesheetDailyReport
+}
+
+function slashList(value: unknown, slots: number): string {
+  const text = txt(value)
+  if (!text) return Array.from({ length: slots }, () => '').join(' / ')
+  const parts = text.includes('/') ? text.split('/') : text.split(/[,;\n]+/)
+  return Array.from({ length: slots }, (_, index) => txt(parts[index])).join(' / ')
+}
+
+function markedYesNo(value: boolean | undefined, defaultValue = false): string {
+  const on = value ?? defaultValue
+  return `${on ? 'X' : '____'} Yes    ${on ? '____' : 'X'} No`
+}
+
+function fillTemplateLine(label: string, value: unknown): string {
+  return `${label}${txt(value)}`
+}
+
+function tempF(value: unknown): string {
+  const text = txt(value)
+  if (!text) return ''
+  return /[fF]$/.test(text) ? text : `${text}°F`
+}
 
 function timesheetMeta(t: AnyRow): MetaRow[] {
   const emps = (Array.isArray(t.employees) ? t.employees : []) as EmployeeEntry[]
@@ -303,6 +649,8 @@ function timesheetMeta(t: AnyRow): MetaRow[] {
     { label: 'Reference', value: String(t.reference ?? '') },
     { label: 'Submitted', value: fmtDateTime(t.created_at as string) },
     { label: 'Job #', value: String(t.job_number ?? '') },
+    { label: 'Job name', value: String(t.job_name ?? '') || '—' },
+    { label: 'Written by', value: String(t.written_by ?? '') || '—' },
     { label: 'Work date', value: fmtDate(t.work_date as string) },
     { label: 'Shift', value: String(t.shift ?? '') || '—' },
     { label: 'Job floor / area', value: String(t.job_floor ?? '') || '—' },
@@ -331,6 +679,10 @@ function timesheetCrewTable(t: AnyRow): Table {
       { header: 'OT', width: 8 },
       { header: 'PT', width: 8 },
       { header: 'Total', width: 10 },
+      { header: 'Location of Work', width: 24 },
+      { header: 'Type of Work', width: 24 },
+      { header: 'Payment', width: 12 },
+      { header: 'Code', width: 10 },
     ],
     rows: emps.map((e) => [
       e.name,
@@ -341,32 +693,191 @@ function timesheetCrewTable(t: AnyRow): Table {
       e.ot_hours ?? 0,
       e.pt_hours ?? 0,
       e.total ?? 0,
+      e.location_of_work ?? '',
+      e.type_of_work ?? '',
+      e.payment ?? '',
+      e.code ?? '',
     ]),
   }
 }
 
-const QC_RESULT: Record<string, string> = {
-  pass: 'PASS',
-  pass_with_notes: 'PASS WITH NOTES',
-  fail: 'FAIL',
+function timesheetTemplatePatches(t: AnyRow): Record<string, string> {
+  const patches: Record<string, string> = {}
+  const daily = timesheetDailyReport(t)
+  const emps = (Array.isArray(t.employees) ? t.employees : []) as EmployeeEntry[]
+  const defaultLocation = txt(t.job_floor)
+  const defaultWork = txt(t.work_performed)
+  const hiddenEmployees = emps.slice(23)
+
+  patches.A2 = `Job #: ${txt(t.job_number)}`
+  patches.C2 = `Job Name: ${txt(t.job_name)}`
+  patches.D2 = `Written by (Print) : ${txt(t.written_by)}`
+  patches.A3 = `Date: ${sheetDate(t.work_date as string)}`
+  patches.D3 = `Date: ${sheetDate((t.created_at as string) || (t.work_date as string))}`
+
+  emps.slice(0, 23).forEach((employee, index) => {
+    const row = 6 + index
+    patches[`A${row}`] = txt(employee.name)
+    patches[`B${row}`] = txt(employee.total)
+    patches[`C${row}`] = txt(employee.location_of_work) || defaultLocation
+    patches[`D${row}`] = txt(employee.type_of_work) || defaultWork
+    patches[`E${row}`] = txt(employee.payment)
+    patches[`F${row}`] = txt(employee.code)
+  })
+
+  patches.A30 = `Time ${txt(daily.ambient_time_1)}   Relative Humidity ${txt(daily.relative_humidity_1)} %   Ambient Temp ${tempF(daily.ambient_temp_1)}`
+  patches.D30 = `Surface Temp ${tempF(daily.surface_temp_1)}   Dew Point ${tempF(daily.dew_point_1)}`
+  patches.A31 = `Time ${txt(daily.ambient_time_2)}   Relative Humidity ${txt(daily.relative_humidity_2)} %   Ambient Temp ${tempF(daily.ambient_temp_2)}`
+  patches.D31 = `Surface Temp ${tempF(daily.surface_temp_2)}    Dew Point ${tempF(daily.dew_point_2)}`
+  patches.A32 = `Paint Batch # Part A ${slashList(daily.paint_batch_part_a, 3)}    Paint Batch  # Part B ${slashList(daily.paint_batch_part_b, 3)}   Paint Type: ${txt(daily.paint_type) || 'Latex,  Epoxy,  Oil'}`
+  patches.A33 = `Mixing Time for: Part A ${txt(daily.mixing_time_part_a)}  Part B ${txt(daily.mixing_time_part_b)} Combined ${txt(daily.mixing_time_combined)}   Describe Surface Preparation Performed: ${txt(daily.surface_prep_performed) || 'SP1,  SP2,  SP3,  Other'}`
+  patches.A34 = `Is the surface to be painted: Clean, Dry, Free of Oil, Grease, Dirt and other contaminants?   ${markedYesNo(daily.surface_clean, true)} IF NO DO NOT PROCEED! (Check one)`
+  patches.A35 = `Wet Mil Readings ${slashList(daily.wet_mil_readings_a, 5)}     Wet Mil Readings ${slashList(daily.wet_mil_readings_b, 5)}`
+  patches.A36 = `Actual time between last coat and today's coat ${txt(daily.time_between_coats)}  Was recoat window exceeded? ${markedYesNo(daily.recoat_exceeded)} If yes what corrective action was taken? ${txt(daily.corrective_action)}`
+
+  const flags = [
+    t.work_stoppage ? `Work stoppage: ${txt(t.work_stoppage_note) || 'Yes'}` : '',
+    t.injuries ? `Injuries: ${txt(t.injuries_note) || 'Yes'}` : '',
+    hiddenEmployees.length ? `Additional employees not shown: ${hiddenEmployees.map((e) => e.name).join(', ')}` : '',
+  ].filter(Boolean)
+  patches.A37 = fillTemplateLine('Remarks ', [daily.remarks, t.notes, flags.join(' | ')].map(txt).filter(Boolean).join(' | '))
+
+  return patches
+}
+
+async function saveTimesheetTemplateWorkbook(t: AnyRow, filename: string) {
+  const [{ default: JSZip }, template] = await Promise.all([
+    import('jszip'),
+    fetch(TIMESHEET_TEMPLATE_URL).then((res) => {
+      if (!res.ok) throw new Error(`Unable to load timesheet Excel template (${res.status})`)
+      return res.arrayBuffer()
+    }),
+  ])
+  const zip = await JSZip.loadAsync(template)
+  const path = 'xl/worksheets/sheet1.xml'
+  const file = zip.file(path)
+  if (!file) throw new Error(`Timesheet Excel template is missing ${path}`)
+  const xml = await file.async('string')
+  zip.file(path, applyCellPatches(xml, timesheetTemplatePatches(t)))
+  const blob = await zip.generateAsync({ type: 'blob', mimeType: XLSX_MIME })
+  download(blob, filename)
+}
+
+function qcData(q: AnyRow): DailyQCData {
+  return normalizeDailyQCData(q.details)
+}
+
+function qcRows(q: AnyRow): MetaRow[] {
+  const d = qcData(q)
+  const rows: MetaRow[] = [
+    { label: 'Reference', value: String(q.reference ?? '') },
+    { label: 'Submitted', value: fmtDateTime(q.created_at as string) },
+    { label: 'Date', value: fmtDate(q.report_date as string) },
+    { label: 'Day', value: d.day_of_week },
+    { label: 'Page', value: `${d.page_number} of ${d.page_total}` },
+    { label: 'Project', value: d.project || String(q.job_number ?? '') },
+    { label: 'Contract No.', value: d.contract_number },
+    { label: 'Weather AM', value: d.weather_am },
+    { label: 'Weather PM', value: d.weather_pm },
+    { label: 'Number of Workers Onsite', value: d.workers_on_site },
+    { label: 'Start Time', value: d.start_time },
+    { label: 'Stop Time', value: d.stop_time },
+    { label: 'AMBIENT CONDITIONS — Location', value: d.ambient_location },
+  ]
+  d.ambient_readings.forEach((reading, index) => {
+    const n = index + 1
+    rows.push(
+      { label: `Ambient ${n} — Time (24hr)`, value: reading.time },
+      { label: `Ambient ${n} — Relative Humidity %`, value: reading.relative_humidity },
+      { label: `Ambient ${n} — Temperature Air °F`, value: reading.air_temperature },
+      { label: `Ambient ${n} — Temperature Surface °F`, value: reading.surface_temperature },
+      { label: `Ambient ${n} — Temperature Dew Point °F`, value: reading.dew_point },
+      { label: `Ambient ${n} — Surface / Dew Point Depression`, value: reading.surface_dew_point_depression },
+    )
+  })
+  d.instruments.forEach((instrument, index) => {
+    const n = index + 1
+    rows.push(
+      { label: `Instrument ${n} — Instrument`, value: instrument.instrument },
+      { label: `Instrument ${n} — Serial #`, value: instrument.serial_number },
+      { label: `Instrument ${n} — Calibrated`, value: yesNoLabel(instrument.calibrated) },
+      { label: `Instrument ${n} — Calibration Check Reading 1`, value: instrument.standard_reading_1 },
+      { label: `Instrument ${n} — Calibration Check Reading 2`, value: instrument.standard_reading_2 },
+      { label: `Instrument ${n} — Calibration Check Reading 3`, value: instrument.standard_reading_3 },
+    )
+  })
+  rows.push(
+    { label: 'Equipment collected & inspected within past 12 months', value: yesNoLabel(d.equipment_inspected_within_12_months) },
+    { label: 'DESCRIPTION OF AREAS / LOCATIONS & WORK PERFORMED', value: d.description_of_areas_locations_work_performed },
+    { label: 'Surface Preparation Required: SSPC SP-', value: d.surface_preparation_required },
+    { label: 'Surface Preparation Performed: SSPC SP-', value: d.surface_preparation_performed },
+    { label: 'Surface Profile Required', value: d.surface_profile_required },
+    { label: 'Surface Profile Achieved', value: d.surface_profile_achieved },
+    { label: 'Surface Preparation Method', value: d.surface_preparation_methods.join(', ') },
+    { label: 'Surface Preparation Method — Other', value: d.surface_preparation_other },
+    { label: 'Surface clean, moisture free, free of contaminants', value: yesNoLabel(d.surface_clean_moisture_free) },
+    { label: 'If no, do not proceed — Explain', value: d.do_not_proceed_explanation },
+    { label: 'Hazardous waste generated', value: yesNoLabel(d.hazardous_waste_generated) },
+    { label: 'Hazardous waste properly stored & identified', value: yesNoLabel(d.hazardous_waste_properly_stored_identified) },
+    { label: 'Surface Preparation Comments', value: d.surface_preparation_comments },
+    { label: 'Light Meter Serial No.', value: d.light_meter_serial_number },
+  )
+  d.light_readings.forEach((reading, index) => rows.push(
+    { label: `Light Reading ${index + 1} — FC`, value: reading.foot_candles },
+    { label: `Light Reading ${index + 1} — Time`, value: reading.time },
+  ))
+  rows.push(
+    { label: 'Sharp Edges and Weld Splatter Removed', value: yesNoLabel(d.sharp_edges_weld_splatter_removed) },
+    { label: 'Clean and Dry Abrasive', value: yesNoLabel(d.clean_dry_abrasive) },
+    { label: 'Type of Abrasive and Size', value: d.abrasive_type_size },
+    { label: 'Compressed Air Check', value: yesNoLabel(d.compressed_air_check) },
+    { label: 'Nozzle Air Pressure', value: d.nozzle_air_pressure },
+    { label: 'Blotter Test', value: yesNoLabel(d.blotter_test) },
+    { label: 'Any Safety Issues Occur', value: yesNoLabel(d.safety_issues_occurred) },
+    { label: 'Safety issue copy sent to field office', value: yesNoLabel(d.safety_issue_copy_sent_to_field_office) },
+    { label: 'Workers wearing proper PPE', value: yesNoLabel(d.workers_wearing_proper_ppe) },
+    { label: 'Pre-start Safety Talks being performed', value: yesNoLabel(d.pre_start_safety_talks_performed) },
+  )
+  d.coating_applications.forEach((application, index) => {
+    const n = index + 1
+    rows.push(
+      { label: `COATING APPLICATION ${n} — Application Location(s)`, value: application.application_locations },
+      { label: `Coating Application ${n} — Coating`, value: application.coatings.join(', ') },
+      { label: `Coating Application ${n} — Other`, value: application.coating_other },
+      { label: `Coating Application ${n} — Mix(s) Witnessed & Acceptable`, value: yesNoLabel(application.mix_witnessed_acceptable) },
+      { label: `Coating Application ${n} — Manufacturer`, value: application.manufacturer },
+      { label: `Coating Application ${n} — Product Name`, value: application.product_name },
+      { label: `Coating Application ${n} — Kit Size & Color`, value: application.kit_size_color },
+      { label: `Coating Application ${n} — Shelf Life`, value: application.shelf_life },
+      { label: `Coating Application ${n} — Reducer`, value: application.reducer },
+      { label: `Coating Application ${n} — Reducer #`, value: application.reducer_number },
+      { label: `Coating Application ${n} — Pot Life`, value: application.pot_life },
+      { label: `Coating Application ${n} — # Of Mixes`, value: application.number_of_mixes },
+      { label: `Coating Application ${n} — Method of Application`, value: application.application_methods.join(', ') },
+      { label: `Coating Application ${n} — Total Gallons Applied`, value: application.total_gallons_applied },
+      { label: `Coating Application ${n} — Required WFT`, value: application.required_wft },
+      { label: `Coating Application ${n} — Average WFT`, value: application.average_wft },
+    )
+    application.batch_lot_numbers.forEach((value, row) => rows.push(
+      { label: `Coating Application ${n} — Batch / Lot # ${row + 1}`, value },
+      { label: `Coating Application ${n} — Part ${row + 1}`, value: application.parts[row] },
+      { label: `Coating Application ${n} — Material Temp ${row + 1} °F`, value: application.material_temperatures[row] },
+      { label: `Coating Application ${n} — Mix Time ${row + 1}`, value: application.mix_times[row] },
+    ))
+    application.wft_readings.forEach((value, row) => rows.push({ label: `Coating Application ${n} — WFT Reading ${row + 1}`, value }))
+  })
+  rows.push(
+    { label: 'Coating Comments', value: d.coating_comments },
+    { label: 'Competent Person Print', value: d.competent_person_print },
+    { label: 'Competent Person Sign', value: d.competent_person_signature },
+    { label: 'QC Supervisor Print', value: d.qc_supervisor_print },
+    { label: 'QC Supervisor Sign', value: d.qc_supervisor_signature },
+  )
+  return rows
 }
 
 function qcMeta(q: AnyRow): MetaRow[] {
-  const photos = Array.isArray(q.photos) ? q.photos : []
-  return [
-    { label: 'Reference', value: String(q.reference ?? '') },
-    { label: 'Submitted', value: fmtDateTime(q.created_at as string) },
-    { label: 'Job #', value: String(q.job_number ?? '') },
-    { label: 'Report date', value: fmtDate(q.report_date as string) },
-    { label: 'Inspector', value: String(q.inspector_name ?? '') },
-    { label: 'Result', value: QC_RESULT[String(q.result)] ?? String(q.result ?? '') },
-    { label: 'Area inspected', value: String(q.area_inspected ?? '') },
-    { label: 'Work inspected', value: String(q.work_inspected ?? '') },
-    { label: 'Observations', value: String(q.observations ?? '') || '—' },
-    { label: 'Deficiencies', value: String(q.deficiencies ?? '') || '—' },
-    { label: 'Corrective actions', value: String(q.corrective_actions ?? '') || '—' },
-    { label: 'Photos', value: `${photos.length} attached` },
-  ]
+  return qcRows(q)
 }
 
 export type ExportKind = 'material_order' | 'timesheet' | 'qc_report'
@@ -388,6 +899,14 @@ function metaFor(kind: ExportKind, row: AnyRow): MetaRow[] {
    ========================================================================== */
 
 export async function exportSubmissionExcel(kind: ExportKind, row: AnyRow) {
+  if (kind === 'qc_report') {
+    await saveDailyQCTemplateWorkbook(row, `${row.reference ?? kind}.xlsx`)
+    return
+  }
+  if (kind === 'timesheet') {
+    await saveTimesheetTemplateWorkbook(row, `${row.reference ?? kind}.xlsx`)
+    return
+  }
   const spec: SheetSpec = {
     kindLabel: KIND_LABEL[kind],
     subtitle: String(row.reference ?? ''),
@@ -416,7 +935,7 @@ export function exportSubmissionCsv(kind: ExportKind, row: AnyRow) {
     )
   } else if (kind === 'timesheet') {
     rows.push([])
-    rows.push(['Employee', 'In', 'Out', 'Break', 'Reg', 'OT', 'PT', 'Total'])
+    rows.push(['Employee', 'In', 'Out', 'Break', 'Reg', 'OT', 'PT', 'Total', 'Location of Work', 'Type of Work', 'Payment', 'Code'])
     timesheetCrewTable(row).rows.forEach((r) => rows.push(r))
   }
   saveCsv(rows, `${row.reference ?? kind}.csv`)
@@ -441,7 +960,9 @@ const LIST_COLUMNS: Record<ExportKind, { header: string; width: number; key: str
     { header: 'Reference', width: 18, key: 'reference' },
     { header: 'Submitted', width: 20, key: '_submitted' },
     { header: 'Job #', width: 12, key: 'job_number' },
+    { header: 'Job name', width: 24, key: 'job_name' },
     { header: 'Work date', width: 14, key: '_work_date' },
+    { header: 'Written by', width: 18, key: 'written_by' },
     { header: 'Shift', width: 10, key: 'shift' },
     { header: 'Crew', width: 8, key: '_crew' },
     { header: 'Man-hours', width: 10, key: 'total_hours' },
@@ -451,12 +972,11 @@ const LIST_COLUMNS: Record<ExportKind, { header: string; width: number; key: str
   qc_report: [
     { header: 'Reference', width: 18, key: 'reference' },
     { header: 'Submitted', width: 20, key: '_submitted' },
-    { header: 'Job #', width: 12, key: 'job_number' },
+    { header: 'Project', width: 24, key: '_qc_project' },
+    { header: 'Contract No.', width: 18, key: '_qc_contract' },
     { header: 'Report date', width: 14, key: '_report_date' },
-    { header: 'Inspector', width: 20, key: 'inspector_name' },
-    { header: 'Area', width: 26, key: 'area_inspected' },
-    { header: 'Result', width: 16, key: '_result' },
-    { header: 'Photos', width: 8, key: '_photos' },
+    { header: 'QC supervisor', width: 22, key: '_qc_supervisor' },
+    { header: 'Work / location', width: 34, key: '_qc_work' },
   ],
 }
 
@@ -470,8 +990,14 @@ function listCell(row: AnyRow, key: string): string | number {
       return fmtDate(row.work_date as string)
     case '_report_date':
       return fmtDate(row.report_date as string)
-    case '_result':
-      return QC_RESULT[String(row.result)] ?? String(row.result ?? '')
+    case '_qc_project':
+      return qcData(row).project || String(row.job_number ?? '')
+    case '_qc_contract':
+      return qcData(row).contract_number
+    case '_qc_supervisor':
+      return qcData(row).qc_supervisor_print || String(row.inspector_name ?? '')
+    case '_qc_work':
+      return qcData(row).description_of_areas_locations_work_performed || String(row.area_inspected ?? '')
     case '_items':
       return Array.isArray(row.items) ? row.items.length : 0
     case '_photos':

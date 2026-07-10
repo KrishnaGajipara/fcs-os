@@ -63,12 +63,18 @@ export type TimesheetEmployee = {
   ot_hours: number
   pt_hours: number
   total: number
+  location_of_work?: string | null
+  type_of_work?: string | null
+  payment?: string | null
+  code?: string | null
 }
 
 export type Timesheet = {
   id: string
   reference: string
   job_number: string
+  job_name: string | null
+  written_by: string | null
   work_date: string
   shift: string | null
   job_floor: string | null
@@ -85,6 +91,7 @@ export type Timesheet = {
   total_hours: number
   work_performed: string | null
   notes: string | null
+  daily_report: Record<string, unknown>
   created_at: string
 }
 
@@ -101,6 +108,7 @@ export type QCReport = {
   corrective_actions: string | null
   result: 'pass' | 'pass_with_notes' | 'fail'
   photos: string[]
+  details: unknown
   created_at: string
 }
 

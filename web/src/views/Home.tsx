@@ -28,8 +28,8 @@ const MODULES: {
   {
     route: 'qc',
     icon: <IconClipboard size={20} />,
-    title: 'QC Report',
-    desc: 'File quality control inspections with findings, corrective actions, and site photos.',
+    title: 'Daily QC Report',
+    desc: 'Record ambient conditions, surface preparation, safety checks, coating application, and signoff.',
   },
 ]
 

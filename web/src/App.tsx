@@ -29,8 +29,8 @@ const PAGES: Record<Route, { title: string; sub: string }> = {
     sub: 'Record daily hours against a job number.',
   },
   qc: {
-    title: 'QC Report',
-    sub: 'File a quality control inspection report with photos.',
+    title: 'Daily QC Report',
+    sub: 'Record daily ambient conditions, preparation checks, safety, coating application, and signoff.',
   },
   admin: {
     title: 'Admin',

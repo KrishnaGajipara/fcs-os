@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
   changePassword,
-  signedPhoto,
   updateOrderStatus,
   type AdminData,
   type MaterialOrder,
@@ -15,6 +14,7 @@ import {
   exportSubmissionExcel,
   type ExportKind,
 } from '../../lib/export'
+import { normalizeDailyQCData, yesNoLabel } from '../../lib/qc'
 import { IconDownload, IconSpinner } from '../../components/ui'
 import { MaterialsManager } from './MaterialsManager'
 
@@ -37,11 +37,6 @@ const STATUS_LABEL: Record<string, string> = {
   processing: 'Processing',
   shipped: 'Shipped',
   cancelled: 'Cancelled',
-}
-const QC_RESULT: Record<string, string> = {
-  pass: 'Pass',
-  pass_with_notes: 'Pass w/ notes',
-  fail: 'Fail',
 }
 
 function fmtDate(iso: string | null | undefined): string {
@@ -78,6 +73,10 @@ function rangeStart(range: Range): number {
 
 type AnyRecord = MaterialOrder | Timesheet | QCReport
 
+function dailyQC(q: QCReport) {
+  return normalizeDailyQCData(q.details)
+}
+
 function searchText(tab: Tab, r: AnyRecord): string {
   if (tab === 'material_orders') {
     const o = r as MaterialOrder
@@ -86,10 +85,11 @@ function searchText(tab: Tab, r: AnyRecord): string {
   if (tab === 'timesheets') {
     const t = r as Timesheet
     const names = (t.employees ?? []).map((e) => e.name).join(' ')
-    return [t.reference, t.job_number, t.shift, names].join(' ').toLowerCase()
+    return [t.reference, t.job_number, t.job_name, t.written_by, t.shift, names].join(' ').toLowerCase()
   }
   const q = r as QCReport
-  return [q.reference, q.job_number, q.inspector_name, q.area_inspected, q.result].join(' ').toLowerCase()
+  const d = dailyQC(q)
+  return [q.reference, d.project || q.job_number, d.contract_number, d.qc_supervisor_print || q.inspector_name, d.ambient_location, d.description_of_areas_locations_work_performed].join(' ').toLowerCase()
 }
 
 export function Dashboard(props: {
@@ -291,8 +291,8 @@ function renderHead(tab: Tab) {
   }
   return (
     <tr>
-      <th>Reference</th><th>Submitted</th><th>Job #</th><th>Inspector</th>
-      <th>Area</th><th>Result</th>
+      <th>Reference</th><th>Submitted</th><th>Project</th><th>QC supervisor</th>
+      <th>Work / location</th><th>Contract no.</th>
     </tr>
   )
 }
@@ -346,14 +346,15 @@ function renderRow(
     )
   }
   const q = r as QCReport
+  const d = dailyQC(q)
   return (
     <>
       <td className="mono">{q.reference}</td>
       <td>{fmtDateTime(q.created_at)}</td>
-      <td className="mono">{q.job_number}</td>
-      <td>{q.inspector_name}</td>
-      <td className="truncate">{q.area_inspected}</td>
-      <td><span className={`result-badge r-${q.result}`}>{QC_RESULT[q.result] ?? q.result}</span></td>
+      <td className="mono">{d.project || q.job_number}</td>
+      <td>{d.qc_supervisor_print || q.inspector_name}</td>
+      <td className="truncate">{d.description_of_areas_locations_work_performed || d.ambient_location || q.area_inspected}</td>
+      <td>{d.contract_number || '—'}</td>
     </>
   )
 }
@@ -462,6 +463,8 @@ function TimesheetDetail({ t }: { t: Timesheet }) {
     <>
       <Row label="Submitted" value={fmtDateTime(t.created_at)} />
       <Row label="Job #" value={<span className="mono">{t.job_number}</span>} />
+      <Row label="Job name" value={t.job_name} />
+      <Row label="Written by" value={t.written_by} />
       <Row label="Work date" value={fmtDate(t.work_date)} />
       <Row label="Shift" value={t.shift} />
       <Row label="Job floor / area" value={t.job_floor} />
@@ -471,7 +474,7 @@ function TimesheetDetail({ t }: { t: Timesheet }) {
       <div className="drawer-section">Crew ({t.employees?.length ?? 0})</div>
       <table className="drawer-items">
         <thead>
-          <tr><th>Employee</th><th>In–Out</th><th>Reg</th><th>OT</th><th>PT</th><th>Total</th></tr>
+          <tr><th>Employee</th><th>In–Out</th><th>Reg</th><th>OT</th><th>PT</th><th>Total</th><th>Location</th><th>Work</th><th>Code</th></tr>
         </thead>
         <tbody>
           {(t.employees ?? []).map((e, i) => (
@@ -482,6 +485,9 @@ function TimesheetDetail({ t }: { t: Timesheet }) {
               <td className="mono">{e.ot_hours || '—'}</td>
               <td className="mono">{e.pt_hours || '—'}</td>
               <td className="mono"><strong>{e.total}</strong></td>
+              <td>{e.location_of_work || '—'}</td>
+              <td>{e.type_of_work || '—'}</td>
+              <td className="mono">{e.code || '—'}</td>
             </tr>
           ))}
         </tbody>
@@ -502,40 +508,63 @@ function TimesheetDetail({ t }: { t: Timesheet }) {
 }
 
 function QCDetail({ q }: { q: QCReport }) {
-  const [photoBusy, setPhotoBusy] = useState<number | null>(null)
-  const openPhoto = async (path: string, i: number) => {
-    setPhotoBusy(i)
-    try {
-      const url = await signedPhoto(path)
-      window.open(url, '_blank', 'noopener')
-    } finally {
-      setPhotoBusy(null)
-    }
-  }
+  const d = dailyQC(q)
   return (
     <>
-      <Row label="Result" value={<span className={`result-badge r-${q.result}`}>{QC_RESULT[q.result] ?? q.result}</span>} />
       <Row label="Submitted" value={fmtDateTime(q.created_at)} />
-      <Row label="Job #" value={<span className="mono">{q.job_number}</span>} />
-      <Row label="Report date" value={fmtDate(q.report_date)} />
-      <Row label="Inspector" value={q.inspector_name} />
-      <Row label="Area inspected" value={q.area_inspected} />
-      <Row label="Work inspected" value={q.work_inspected} />
-      <Row label="Observations" value={q.observations} />
-      <Row label="Deficiencies" value={q.deficiencies} />
-      <Row label="Corrective actions" value={q.corrective_actions} />
-      {q.photos?.length > 0 && (
-        <>
-          <div className="drawer-section">Photos ({q.photos.length})</div>
-          <div className="drawer-photos">
-            {q.photos.map((p, i) => (
-              <button key={i} className="btn btn-secondary" disabled={photoBusy === i} onClick={() => openPhoto(p, i)}>
-                {photoBusy === i ? <IconSpinner /> : <IconDownload />} Photo {i + 1}
-              </button>
-            ))}
-          </div>
-        </>
-      )}
+      <Row label="Date / Day" value={`${fmtDate(q.report_date)}${d.day_of_week ? ` · ${d.day_of_week}` : ''}`} />
+      <Row label="Project" value={<span className="mono">{d.project || q.job_number}</span>} />
+      <Row label="Contract No." value={d.contract_number} />
+      <Row label="Weather AM / PM" value={`${d.weather_am || '—'} / ${d.weather_pm || '—'}`} />
+      <Row label="Workers / Start / Stop" value={`${d.workers_on_site || '—'} / ${d.start_time || '—'} / ${d.stop_time || '—'}`} />
+
+      <div className="drawer-section">Ambient conditions</div>
+      <Row label="Location" value={d.ambient_location || q.area_inspected} />
+      {d.ambient_readings.map((item, i) => (
+        <Row key={i} label={`Reading ${i + 1}`} value={`Time ${item.time || '—'} · RH ${item.relative_humidity || '—'}% · Air ${item.air_temperature || '—'}°F · Surface ${item.surface_temperature || '—'}°F · Dew point ${item.dew_point || '—'}°F · Depression ${item.surface_dew_point_depression || '—'}`} />
+      ))}
+
+      <div className="drawer-section">Instrument record</div>
+      {d.instruments.map((item, i) => item.instrument || item.serial_number || item.calibrated ? (
+        <Row key={i} label={`Instrument ${i + 1}`} value={`${item.instrument || '—'} · S/N ${item.serial_number || '—'} · Calibrated ${yesNoLabel(item.calibrated) || '—'} · Checks: ${[item.standard_reading_1, item.standard_reading_2, item.standard_reading_3].filter(Boolean).join(' / ') || '—'}`} />
+      ) : null)}
+      <Row label="Equipment inspected within 12 months" value={yesNoLabel(d.equipment_inspected_within_12_months)} />
+
+      <div className="drawer-section">Preparation &amp; safety</div>
+      <Row label="Work performed" value={d.description_of_areas_locations_work_performed || q.work_inspected} />
+      <Row label="SSPC preparation required / performed" value={`${d.surface_preparation_required || '—'} / ${d.surface_preparation_performed || '—'}`} />
+      <Row label="Surface profile required / achieved" value={`${d.surface_profile_required || '—'} / ${d.surface_profile_achieved || '—'}`} />
+      <Row label="Preparation method" value={[...d.surface_preparation_methods, d.surface_preparation_other].filter(Boolean).join(', ')} />
+      <Row label="Surface clean & moisture free" value={yesNoLabel(d.surface_clean_moisture_free)} />
+      <Row label="Do not proceed explanation" value={d.do_not_proceed_explanation} />
+      <Row label="Hazardous waste generated / stored" value={`${yesNoLabel(d.hazardous_waste_generated) || '—'} / ${yesNoLabel(d.hazardous_waste_properly_stored_identified) || '—'}`} />
+      <Row label="Sharp edges & weld splatter removed" value={yesNoLabel(d.sharp_edges_weld_splatter_removed)} />
+      <Row label="Clean & dry abrasive" value={yesNoLabel(d.clean_dry_abrasive)} />
+      <Row label="Abrasive type & size" value={d.abrasive_type_size} />
+      <Row label="Compressed air check / Nozzle air pressure / Blotter test" value={`${yesNoLabel(d.compressed_air_check) || '—'} / ${d.nozzle_air_pressure || '—'} / ${yesNoLabel(d.blotter_test) || '—'}`} />
+      <Row label="Safety issues / Field office copy" value={`${yesNoLabel(d.safety_issues_occurred) || '—'} / ${yesNoLabel(d.safety_issue_copy_sent_to_field_office) || '—'}`} />
+      <Row label="Proper PPE / Pre-start safety talks" value={`${yesNoLabel(d.workers_wearing_proper_ppe) || '—'} / ${yesNoLabel(d.pre_start_safety_talks_performed) || '—'}`} />
+
+      {d.coating_applications.map((application, i) => (
+        <div key={i}>
+          <div className="drawer-section">Coating application {i + 1}</div>
+          <Row label="Location(s)" value={application.application_locations} />
+          <Row label="Coating / mix acceptable" value={`${[...application.coatings, application.coating_other].filter(Boolean).join(', ') || '—'} / ${yesNoLabel(application.mix_witnessed_acceptable) || '—'}`} />
+          <Row label="Manufacturer / Product / Kit" value={`${application.manufacturer || '—'} / ${application.product_name || '—'} / ${application.kit_size_color || '—'}`} />
+          <Row label="Batch / Lot #" value={application.batch_lot_numbers.filter(Boolean).join(' / ')} />
+          <Row label="Parts / Material Temps / Mix Times" value={`${application.parts.filter(Boolean).join(' / ') || '—'} · ${application.material_temperatures.filter(Boolean).join(' / ') || '—'} °F · ${application.mix_times.filter(Boolean).join(' / ') || '—'}`} />
+          <Row label="Shelf life / Reducer / Pot life" value={`${application.shelf_life || '—'} / ${application.reducer || '—'} ${application.reducer_number || ''} / ${application.pot_life || '—'}`} />
+          <Row label="Application method / Gallons" value={`${application.application_methods.join(', ') || '—'} / ${application.total_gallons_applied || '—'}`} />
+          <Row label="Required / Average WFT" value={`${application.required_wft || '—'} / ${application.average_wft || '—'}`} />
+          <Row label="WFT readings" value={application.wft_readings.filter(Boolean).join(' / ')} />
+        </div>
+      ))}
+      <div className="drawer-section">Comments &amp; signoff</div>
+      <Row label="Surface preparation comments" value={d.surface_preparation_comments || q.observations} />
+      <Row label="Coating comments" value={d.coating_comments} />
+      <Row label="Light meter" value={`${d.light_meter_serial_number || '—'} · ${d.light_readings.map((reading, i) => `${i + 1}: ${reading.foot_candles || '—'} FC / ${reading.time || '—'}`).join(' · ')}`} />
+      <Row label="Competent person print / sign" value={`${d.competent_person_print || '—'} / ${d.competent_person_signature || '—'}`} />
+      <Row label="QC supervisor print / sign" value={`${d.qc_supervisor_print || '—'} / ${d.qc_supervisor_signature || '—'}`} />
     </>
   )
 }

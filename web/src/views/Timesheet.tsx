@@ -31,10 +31,26 @@ type EmpRow = {
   breakMin: string
   ot: string
   pt: string
+  locationOfWork: string
+  typeOfWork: string
+  payment: string
+  code: string
 }
 
 function newEmp(id: number): EmpRow {
-  return { id, name: '', timeIn: '', timeOut: '', breakMin: '30', ot: '', pt: '' }
+  return {
+    id,
+    name: '',
+    timeIn: '',
+    timeOut: '',
+    breakMin: '30',
+    ot: '',
+    pt: '',
+    locationOfWork: '',
+    typeOfWork: '',
+    payment: '',
+    code: '',
+  }
 }
 
 function empTotal(e: EmpRow): number {
@@ -81,6 +97,8 @@ function YesNo(props: {
 export function Timesheet(props: { onHome: () => void }) {
   // day/job header
   const [jobNumber, setJobNumber] = useState('')
+  const [jobName, setJobName] = useState('')
+  const [writtenBy, setWrittenBy] = useState('')
   const [workDate, setWorkDate] = useState(todayISO())
   const [shift, setShift] = useState('Day')
   const [jobFloor, setJobFloor] = useState('')
@@ -102,6 +120,30 @@ export function Timesheet(props: { onHome: () => void }) {
 
   const [workPerformed, setWorkPerformed] = useState('')
   const [notes, setNotes] = useState('')
+  const [ambientTime1, setAmbientTime1] = useState('')
+  const [relativeHumidity1, setRelativeHumidity1] = useState('')
+  const [ambientTemp1, setAmbientTemp1] = useState('')
+  const [surfaceTemp1, setSurfaceTemp1] = useState('')
+  const [dewPoint1, setDewPoint1] = useState('')
+  const [ambientTime2, setAmbientTime2] = useState('')
+  const [relativeHumidity2, setRelativeHumidity2] = useState('')
+  const [ambientTemp2, setAmbientTemp2] = useState('')
+  const [surfaceTemp2, setSurfaceTemp2] = useState('')
+  const [dewPoint2, setDewPoint2] = useState('')
+  const [paintBatchPartA, setPaintBatchPartA] = useState('')
+  const [paintBatchPartB, setPaintBatchPartB] = useState('')
+  const [paintType, setPaintType] = useState('')
+  const [mixingTimePartA, setMixingTimePartA] = useState('')
+  const [mixingTimePartB, setMixingTimePartB] = useState('')
+  const [mixingTimeCombined, setMixingTimeCombined] = useState('')
+  const [surfacePrepPerformed, setSurfacePrepPerformed] = useState('')
+  const [surfaceClean, setSurfaceClean] = useState(true)
+  const [wetMilReadingsA, setWetMilReadingsA] = useState('')
+  const [wetMilReadingsB, setWetMilReadingsB] = useState('')
+  const [timeBetweenCoats, setTimeBetweenCoats] = useState('')
+  const [recoatExceeded, setRecoatExceeded] = useState(false)
+  const [correctiveAction, setCorrectiveAction] = useState('')
+  const [dailyRemarks, setDailyRemarks] = useState('')
 
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [submitting, setSubmitting] = useState(false)
@@ -157,12 +199,18 @@ export function Timesheet(props: { onHome: () => void }) {
         ot_hours: parseFloat(x.ot) || 0,
         pt_hours: parseFloat(x.pt) || 0,
         total: empTotal(x),
+        location_of_work: x.locationOfWork.trim() || null,
+        type_of_work: x.typeOfWork.trim() || null,
+        payment: x.payment.trim() || null,
+        code: x.code.trim() || null,
       }))
 
     const reference = makeReference('TS')
     const payload = {
       reference,
       job_number: jobNumber.trim(),
+      job_name: jobName.trim() || null,
+      written_by: writtenBy.trim() || null,
       work_date: workDate,
       shift: shift || null,
       job_floor: jobFloor.trim() || null,
@@ -179,6 +227,32 @@ export function Timesheet(props: { onHome: () => void }) {
       total_hours: grandTotal,
       work_performed: workPerformed.trim() || null,
       notes: notes.trim() || null,
+      daily_report: {
+        ambient_time_1: ambientTime1.trim(),
+        relative_humidity_1: relativeHumidity1.trim(),
+        ambient_temp_1: ambientTemp1.trim(),
+        surface_temp_1: surfaceTemp1.trim(),
+        dew_point_1: dewPoint1.trim(),
+        ambient_time_2: ambientTime2.trim(),
+        relative_humidity_2: relativeHumidity2.trim(),
+        ambient_temp_2: ambientTemp2.trim(),
+        surface_temp_2: surfaceTemp2.trim(),
+        dew_point_2: dewPoint2.trim(),
+        paint_batch_part_a: paintBatchPartA.trim(),
+        paint_batch_part_b: paintBatchPartB.trim(),
+        paint_type: paintType.trim(),
+        mixing_time_part_a: mixingTimePartA.trim(),
+        mixing_time_part_b: mixingTimePartB.trim(),
+        mixing_time_combined: mixingTimeCombined.trim(),
+        surface_prep_performed: surfacePrepPerformed.trim(),
+        surface_clean: surfaceClean,
+        wet_mil_readings_a: wetMilReadingsA.trim(),
+        wet_mil_readings_b: wetMilReadingsB.trim(),
+        time_between_coats: timeBetweenCoats.trim(),
+        recoat_exceeded: recoatExceeded,
+        corrective_action: correctiveAction.trim(),
+        remarks: dailyRemarks.trim(),
+      },
     }
     const { error } = await supabase.from('timesheets').insert(payload)
 
@@ -205,10 +279,36 @@ export function Timesheet(props: { onHome: () => void }) {
     setInspections(false)
     setInspectionsNote('')
     setSlipWork(false)
+    setJobName('')
+    setWrittenBy('')
     setJobFloor('')
     setWeather('')
     setWorkPerformed('')
     setNotes('')
+    setAmbientTime1('')
+    setRelativeHumidity1('')
+    setAmbientTemp1('')
+    setSurfaceTemp1('')
+    setDewPoint1('')
+    setAmbientTime2('')
+    setRelativeHumidity2('')
+    setAmbientTemp2('')
+    setSurfaceTemp2('')
+    setDewPoint2('')
+    setPaintBatchPartA('')
+    setPaintBatchPartB('')
+    setPaintType('')
+    setMixingTimePartA('')
+    setMixingTimePartB('')
+    setMixingTimeCombined('')
+    setSurfacePrepPerformed('')
+    setSurfaceClean(true)
+    setWetMilReadingsA('')
+    setWetMilReadingsB('')
+    setTimeBetweenCoats('')
+    setRecoatExceeded(false)
+    setCorrectiveAction('')
+    setDailyRemarks('')
     setErrors({})
   }
 
@@ -248,6 +348,24 @@ export function Timesheet(props: { onHome: () => void }) {
                 onChange={(e) => setJobNumber(e.target.value)}
                 placeholder="e.g. 26-1042"
                 maxLength={60}
+              />
+            </Field>
+            <Field label="Job name">
+              <input
+                className="input"
+                value={jobName}
+                onChange={(e) => setJobName(e.target.value)}
+                placeholder="Project name"
+                maxLength={160}
+              />
+            </Field>
+            <Field label="Written by">
+              <input
+                className="input"
+                value={writtenBy}
+                onChange={(e) => setWrittenBy(e.target.value)}
+                placeholder="Printed name"
+                maxLength={120}
               />
             </Field>
             <Field label="Date" required error={errors.workDate}>
@@ -308,6 +426,10 @@ export function Timesheet(props: { onHome: () => void }) {
                   <th>OT</th>
                   <th>PT</th>
                   <th>Total</th>
+                  <th style={{ minWidth: 190 }}>Location of work</th>
+                  <th style={{ minWidth: 190 }}>Type of work</th>
+                  <th>Payment</th>
+                  <th>Code</th>
                   <th aria-label="remove"></th>
                 </tr>
               </thead>
@@ -346,6 +468,43 @@ export function Timesheet(props: { onHome: () => void }) {
                       <input className="input num" inputMode="decimal" value={e.pt} onChange={(ev) => setEmp(e.id, { pt: ev.target.value.replace(/[^\d.]/g, '') })} placeholder="0" />
                     </td>
                     <td className="mono total-cell">{empTotal(e) || '—'}</td>
+                    <td>
+                      <input
+                        className="input"
+                        value={e.locationOfWork}
+                        onChange={(ev) => setEmp(e.id, { locationOfWork: ev.target.value })}
+                        placeholder={jobFloor || 'Area'}
+                        maxLength={160}
+                      />
+                    </td>
+                    <td>
+                      <input
+                        className="input"
+                        value={e.typeOfWork}
+                        onChange={(ev) => setEmp(e.id, { typeOfWork: ev.target.value })}
+                        placeholder="Painting, fireproofing..."
+                        maxLength={160}
+                      />
+                    </td>
+                    <td>
+                      <input
+                        className="input"
+                        value={e.payment}
+                        onChange={(ev) => setEmp(e.id, { payment: ev.target.value })}
+                        placeholder="Phase #"
+                        maxLength={40}
+                      />
+                    </td>
+                    <td>
+                      <select className="select" value={e.code} onChange={(ev) => setEmp(e.id, { code: ev.target.value })}>
+                        <option value="">—</option>
+                        <option value="20">20 Painting</option>
+                        <option value="24">24 Fireproofing</option>
+                        <option value="25">25 Environmental</option>
+                        <option value="26">26 Waterproofing</option>
+                        <option value="27">27 Flooring</option>
+                      </select>
+                    </td>
                     <td>
                       {emps.length > 1 && (
                         <button className="btn btn-ghost" aria-label="Remove employee" onClick={() => removeEmp(e.id)}>✕</button>
@@ -407,6 +566,97 @@ export function Timesheet(props: { onHome: () => void }) {
               {emps.filter((e) => e.name.trim()).length} employee(s) · {grandTotal} man-hours
             </span>
           </div>
+        </div>
+      </div>
+
+      <div className="card">
+        <div className="card-head">
+          <h2>Daily report / quality control</h2>
+          <span className="hint">Optional fields for the time sheet export</span>
+        </div>
+        <div className="card-body">
+          <div className="section-label">Ambient readings</div>
+          <div className="grid cols-5 qc-grid">
+            <Field label="Time 1">
+              <input className="input" value={ambientTime1} onChange={(e) => setAmbientTime1(e.target.value)} placeholder="e.g. 08:00" maxLength={20} />
+            </Field>
+            <Field label="RH 1 %">
+              <input className="input num" inputMode="decimal" value={relativeHumidity1} onChange={(e) => setRelativeHumidity1(e.target.value)} maxLength={20} />
+            </Field>
+            <Field label="Ambient 1 °F">
+              <input className="input num" inputMode="decimal" value={ambientTemp1} onChange={(e) => setAmbientTemp1(e.target.value)} maxLength={20} />
+            </Field>
+            <Field label="Surface 1 °F">
+              <input className="input num" inputMode="decimal" value={surfaceTemp1} onChange={(e) => setSurfaceTemp1(e.target.value)} maxLength={20} />
+            </Field>
+            <Field label="Dew point 1 °F">
+              <input className="input num" inputMode="decimal" value={dewPoint1} onChange={(e) => setDewPoint1(e.target.value)} maxLength={20} />
+            </Field>
+            <Field label="Time 2">
+              <input className="input" value={ambientTime2} onChange={(e) => setAmbientTime2(e.target.value)} placeholder="e.g. 13:00" maxLength={20} />
+            </Field>
+            <Field label="RH 2 %">
+              <input className="input num" inputMode="decimal" value={relativeHumidity2} onChange={(e) => setRelativeHumidity2(e.target.value)} maxLength={20} />
+            </Field>
+            <Field label="Ambient 2 °F">
+              <input className="input num" inputMode="decimal" value={ambientTemp2} onChange={(e) => setAmbientTemp2(e.target.value)} maxLength={20} />
+            </Field>
+            <Field label="Surface 2 °F">
+              <input className="input num" inputMode="decimal" value={surfaceTemp2} onChange={(e) => setSurfaceTemp2(e.target.value)} maxLength={20} />
+            </Field>
+            <Field label="Dew point 2 °F">
+              <input className="input num" inputMode="decimal" value={dewPoint2} onChange={(e) => setDewPoint2(e.target.value)} maxLength={20} />
+            </Field>
+          </div>
+
+          <div className="section-label">Coating notes</div>
+          <div className="grid cols-3">
+            <Field label="Paint batch part A">
+              <input className="input" value={paintBatchPartA} onChange={(e) => setPaintBatchPartA(e.target.value)} placeholder="Use / between batches" maxLength={120} />
+            </Field>
+            <Field label="Paint batch part B">
+              <input className="input" value={paintBatchPartB} onChange={(e) => setPaintBatchPartB(e.target.value)} placeholder="Use / between batches" maxLength={120} />
+            </Field>
+            <Field label="Paint type">
+              <input className="input" value={paintType} onChange={(e) => setPaintType(e.target.value)} placeholder="Latex, Epoxy, Oil..." maxLength={80} />
+            </Field>
+            <Field label="Mixing time part A">
+              <input className="input" value={mixingTimePartA} onChange={(e) => setMixingTimePartA(e.target.value)} maxLength={40} />
+            </Field>
+            <Field label="Mixing time part B">
+              <input className="input" value={mixingTimePartB} onChange={(e) => setMixingTimePartB(e.target.value)} maxLength={40} />
+            </Field>
+            <Field label="Combined mixing time">
+              <input className="input" value={mixingTimeCombined} onChange={(e) => setMixingTimeCombined(e.target.value)} maxLength={40} />
+            </Field>
+          </div>
+
+          <div className="section-label">Surface and recoat</div>
+          <div className="grid cols-2">
+            <Field label="Surface preparation performed">
+              <input className="input" value={surfacePrepPerformed} onChange={(e) => setSurfacePrepPerformed(e.target.value)} placeholder="SP1, SP2, SP3, other" maxLength={160} />
+            </Field>
+            <YesNo label="Surface clean/dry/free of contaminants?" value={surfaceClean} onChange={setSurfaceClean} />
+            <Field label="Wet mil readings set 1">
+              <input className="input" value={wetMilReadingsA} onChange={(e) => setWetMilReadingsA(e.target.value)} placeholder="Use / between readings" maxLength={120} />
+            </Field>
+            <Field label="Wet mil readings set 2">
+              <input className="input" value={wetMilReadingsB} onChange={(e) => setWetMilReadingsB(e.target.value)} placeholder="Use / between readings" maxLength={120} />
+            </Field>
+            <Field label="Time between coats">
+              <input className="input" value={timeBetweenCoats} onChange={(e) => setTimeBetweenCoats(e.target.value)} maxLength={80} />
+            </Field>
+            <YesNo label="Recoat window exceeded?" value={recoatExceeded} onChange={setRecoatExceeded} detail={correctiveAction} onDetail={setCorrectiveAction} detailPlaceholder="Corrective action taken" />
+          </div>
+
+          <div className="section-label">Remarks</div>
+          <textarea
+            className="textarea"
+            value={dailyRemarks}
+            onChange={(e) => setDailyRemarks(e.target.value)}
+            placeholder="Remarks for the bottom of the exported time sheet"
+            maxLength={2000}
+          />
         </div>
       </div>
     </div>

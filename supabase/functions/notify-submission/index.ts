@@ -10,8 +10,6 @@
 //   FROM_EMAIL       sender, e.g. "FCS OS <onboarding@resend.dev>"
 //   NOTIFY_EMAIL     comma-separated recipient list for notifications
 
-import { createClient } from "npm:@supabase/supabase-js@2";
-
 type EmailMessage = {
   to: string[];
   subject: string;
@@ -182,6 +180,9 @@ function timesheetEmail(r: any): { subject: string; html: string } {
       <td align="center" style="padding:7px 10px;border-bottom:1px solid #edf0f3;font-size:13px;">${esc(e.ot_hours || "—")}</td>
       <td align="center" style="padding:7px 10px;border-bottom:1px solid #edf0f3;font-size:13px;">${esc(e.pt_hours || "—")}</td>
       <td align="right" style="padding:7px 10px;border-bottom:1px solid #edf0f3;font-size:13px;font-weight:700;">${esc(e.total ?? 0)}</td>
+      <td style="padding:7px 10px;border-bottom:1px solid #edf0f3;font-size:12px;color:#5f6b7a;">${esc(e.location_of_work || "—")}</td>
+      <td style="padding:7px 10px;border-bottom:1px solid #edf0f3;font-size:12px;color:#5f6b7a;">${esc(e.type_of_work || "—")}</td>
+      <td align="center" style="padding:7px 10px;border-bottom:1px solid #edf0f3;font-size:13px;">${esc(e.code || "—")}</td>
     </tr>`).join("");
 
   const inner = `
@@ -189,6 +190,8 @@ function timesheetEmail(r: any): { subject: string; html: string } {
     <p style="margin:0 0 18px;color:#5f6b7a;font-size:14px;">New daily crew timesheet — ${emps.length} employee${emps.length === 1 ? "" : "s"}, ${esc(r.total_hours)} man-hours.</p>
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #e4e7ec;border-radius:6px;border-collapse:separate;overflow:hidden;margin-bottom:18px;">
       ${row("Job #", esc(r.job_number), true)}
+      ${r.job_name ? row("Job name", esc(r.job_name)) : ""}
+      ${r.written_by ? row("Written by", esc(r.written_by)) : ""}
       ${row("Date", fmtDate(r.work_date))}
       ${r.shift ? row("Shift", esc(r.shift)) : ""}
       ${r.job_floor ? row("Job floor / area", esc(r.job_floor)) : ""}
@@ -203,6 +206,9 @@ function timesheetEmail(r: any): { subject: string; html: string } {
         <th align="center" style="padding:8px 10px;color:#5f6b7a;font-size:10.5px;letter-spacing:0.8px;text-transform:uppercase;">OT</th>
         <th align="center" style="padding:8px 10px;color:#5f6b7a;font-size:10.5px;letter-spacing:0.8px;text-transform:uppercase;">PT</th>
         <th align="right" style="padding:8px 10px;color:#5f6b7a;font-size:10.5px;letter-spacing:0.8px;text-transform:uppercase;">Total</th>
+        <th align="left" style="padding:8px 10px;color:#5f6b7a;font-size:10.5px;letter-spacing:0.8px;text-transform:uppercase;">Location</th>
+        <th align="left" style="padding:8px 10px;color:#5f6b7a;font-size:10.5px;letter-spacing:0.8px;text-transform:uppercase;">Work</th>
+        <th align="center" style="padding:8px 10px;color:#5f6b7a;font-size:10.5px;letter-spacing:0.8px;text-transform:uppercase;">Code</th>
       </tr>
       ${crewRows}
     </table>
@@ -224,56 +230,36 @@ function timesheetEmail(r: any): { subject: string; html: string } {
   };
 }
 
-const RESULT_LABELS: Record<string, [string, string]> = {
-  pass: ["PASS", "#1e7e34"],
-  pass_with_notes: ["PASS WITH NOTES", "#b8860b"],
-  fail: ["FAIL", "#b03a2e"],
-};
-
 // deno-lint-ignore no-explicit-any
 async function qcReportEmail(r: any): Promise<{ subject: string; html: string }> {
-  const [label, color] = RESULT_LABELS[r.result] ?? [String(r.result).toUpperCase(), "#5f6b7a"];
-
-  let photoBlock = "";
-  const photos: string[] = Array.isArray(r.photos) ? r.photos : [];
-  if (photos.length > 0) {
-    const admin = createClient(
-      Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
-    );
-    const links: string[] = [];
-    for (const [i, path] of photos.entries()) {
-      const { data } = await admin.storage.from("qc-photos")
-        .createSignedUrl(path, 60 * 60 * 24 * 30); // 30 days
-      if (data?.signedUrl) {
-        links.push(`<a href="${data.signedUrl}" style="color:#c8643c;font-weight:600;">Photo ${i + 1}</a>`);
-      }
-    }
-    if (links.length > 0) {
-      photoBlock = row("Photos (links valid 30 days)", links.join(" &nbsp;·&nbsp; "));
-    }
-  }
+  const d = r.details && typeof r.details === "object" && !Array.isArray(r.details) ? r.details : {};
+  const text = (key: string, fallback = "") => String(d[key] ?? fallback ?? "");
+  const yn = (value: unknown) => value === "yes" ? "Yes" : value === "no" ? "No" : value === "na" ? "N/A" : "—";
+  const applications = Array.isArray(d.coating_applications) ? d.coating_applications : [];
+  const appSummary = applications.map((app: any, i: number) => {
+    const coatings = Array.isArray(app?.coatings) ? app.coatings.map((value: unknown) => esc(value)).join(", ") : "";
+    return `${i + 1}. ${esc(app?.application_locations || "—")} · ${esc(coatings || app?.coating_other || "—")}`;
+  }).join("<br>");
 
   const inner = `
-    <h1 style="margin:0 0 4px;color:#1a2433;font-size:20px;">QC Report ${esc(r.reference)}
-      <span style="display:inline-block;margin-left:6px;padding:3px 10px;border-radius:4px;background:${color};color:#fff;font-size:11px;letter-spacing:1px;vertical-align:middle;">${label}</span>
-    </h1>
-    <p style="margin:0 0 18px;color:#5f6b7a;font-size:14px;">New quality control report.</p>
+    <h1 style="margin:0 0 4px;color:#1a2433;font-size:20px;">Daily Quality Control Report ${esc(r.reference)}</h1>
+    <p style="margin:0 0 18px;color:#5f6b7a;font-size:14px;">New two-page daily quality control report.</p>
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #e4e7ec;border-radius:6px;border-collapse:separate;overflow:hidden;">
-      ${row("Job #", esc(r.job_number), true)}
-      ${row("Date", fmtDate(r.report_date))}
-      ${row("Inspector", esc(r.inspector_name))}
-      ${row("Area inspected", esc(r.area_inspected))}
-      ${row("Work inspected", esc(r.work_inspected))}
-      ${r.observations ? row("Observations", esc(r.observations)) : ""}
-      ${r.deficiencies ? row("Deficiencies", esc(r.deficiencies)) : ""}
-      ${r.corrective_actions ? row("Corrective actions", esc(r.corrective_actions)) : ""}
-      ${photoBlock}
-      ${r.notes ? row("Notes", esc(r.notes)) : ""}
+      ${row("Project", esc(text("project", r.job_number)), true)}
+      ${row("Contract no.", esc(text("contract_number")))}
+      ${row("Date / day", `${fmtDate(r.report_date)}${text("day_of_week") ? ` · ${esc(text("day_of_week"))}` : ""}`)}
+      ${row("Weather AM / PM", `${esc(text("weather_am") || "—")} / ${esc(text("weather_pm") || "—")}`)}
+      ${row("Workers onsite", esc(text("workers_on_site") || "—"))}
+      ${row("Location", esc(text("ambient_location", r.area_inspected)))}
+      ${row("Work performed", esc(text("description_of_areas_locations_work_performed", r.work_inspected)))}
+      ${row("Surface clean & moisture free", yn(d.surface_clean_moisture_free))}
+      ${row("Safety issues / proper PPE", `${yn(d.safety_issues_occurred)} / ${yn(d.workers_wearing_proper_ppe)}`)}
+      ${applications.length ? row("Coating application locations", appSummary) : ""}
+      ${row("QC supervisor", esc(text("qc_supervisor_print", r.inspector_name)))}
     </table>`;
   return {
-    subject: `[FCS OS] QC Report ${r.reference} — Job #${r.job_number} — ${label}`,
-    html: shell("QC Report", r.reference, inner),
+    subject: `[FCS OS] Daily QC Report ${r.reference} — ${text("project", r.job_number)}`,
+    html: shell("Daily QC Report", r.reference, inner),
   };
 }
 
