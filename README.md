@@ -1,4 +1,4 @@
-# FCS OS — Fine Construction Specialties Operating System
+# FCS OS — Fine Construction Specialties Dashboard
 
 Internal operations portal. Employees submit **Material Orders**, **Timesheets**,
 and **QC Reports**; every submission is stored in the database and emailed to the

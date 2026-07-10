@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Analytics } from '@vercel/analytics/react'
-import logo from './assets/os-logo.jpeg'
+import logo from './assets/fine-logo.png'
 import loadingAnimation from './assets/fcs-loading.gif'
 import { useRoute, type Route } from './lib/router'
 import { IconClipboard, IconClock, IconGrid, IconLock, IconTruck } from './components/ui'
@@ -14,7 +14,7 @@ import { Track } from './views/Track'
 
 const PAGES: Record<Route, { title: string; sub: string }> = {
   home: {
-    title: 'FCS Operating System',
+    title: 'FCS Dashboard',
     sub: 'Internal operations · Fine Construction Specialties',
   },
   orders: {
@@ -73,11 +73,11 @@ export default function App() {
         <aside className="sidebar">
           <div className="sidebar-brand">
             <div className="brand-logo-tile">
-              <img src={logo} alt="FCS OS" />
+              <img src={logo} alt="FINE — Fine Construction Specialties" />
             </div>
             <div>
               <div className="brand-name">FCS OS</div>
-              <div className="brand-sub">Operating System</div>
+              <div className="brand-sub">Dashboard</div>
             </div>
           </div>
 
